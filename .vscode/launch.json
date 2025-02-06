@@ -1,0 +1,42 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'wasi-guard'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=wasi-guard",
+                    "--package=wasi-guard"
+                ],
+                "filter": {
+                    "name": "wasi-guard",
+                    "kind": "bin"
+                }
+            },
+            "args": ["./test/time.wasm"],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'wasi-guard'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=wasi-guard",
+                    "--package=wasi-guard"
+                ],
+                "filter": {
+                    "name": "wasi-guard",
+                    "kind": "bin"
+                }
+            },
+            "args": ["./test/time.wasm"],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
