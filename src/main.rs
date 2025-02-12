@@ -12,7 +12,7 @@ struct Args {
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    let wasm_binary = std::fs::read(args.wasm_path).expect("Failed to read WASM file");
+    let wasm_binary = std::fs::read(args.wasm_path).context("Failed to read WASM file")?;
     let funcs = parse_import_funcs(&wasm_binary).context("Error parsing WASM")?;
     for func in funcs {
         println!("{:?}", func);

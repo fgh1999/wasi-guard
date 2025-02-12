@@ -50,15 +50,6 @@ impl<'a, const ARG_NUM: usize> WasiAbiDescriptor<'a, ARG_NUM> {
     }
 }
 
-macro_rules! count_args {
-    () => { 0usize };
-    (, $($remain:tt)*) => { count_args!($($remain)*) }; // drop heading ','s
-    ($head:ident) => { 1usize };
-    ($head:ident, $($tail:tt)*) => { 1usize + count_args!($($tail)*) };
-    ($head:ident : $head_ty:tt $($tail:tt)*) => { 1usize + count_args!($($tail)*) };
-    ($head:ident [ $head_size:expr ] $($tail:tt)*) => { 1usize + count_args!($($tail)*) };
-}
-
 macro_rules! _desc_abi_arg_list {
     (@as_expr $e:expr) => {{$e}};
     (@accum () -> ($($body:tt)*)) => {_desc_abi_arg_list!(@as_expr [$($body)*])};
@@ -98,10 +89,10 @@ macro_rules! desc_wasi_abi {
         }
     }};
     ($wasi_name:ident ( $($arg:tt)* ) ) => {{
-        const ARG_NUM: usize = count_args!($($arg)*);
+        const ARG_NUM: usize = $crate::__count_idents!($($arg)*);
         crate::wasi::WasiAbiDescriptor::<ARG_NUM> {
             name: stringify!($wasi_name),
-            args: desc_abi_arg_list![$($arg)*],
+            args: _desc_abi_arg_list!(@accum ($($arg)*) -> ()),
         }
     }};
 }
@@ -109,26 +100,6 @@ macro_rules! desc_wasi_abi {
 #[cfg(test)]
 mod test {
     use super::*;
-    #[test]
-    fn count_args_in_macro() {
-        const SIZE0: usize = count_args!(a);
-        assert_eq!(SIZE0, 1);
-        const SIZE01: usize = count_args!(a, b, c);
-        assert_eq!(SIZE01, 3);
-
-        const SIZE10: usize = count_args!(a: i32);
-        assert_eq!(SIZE10, 1);
-        const SIZE11: usize = count_args!(a: i32, b: i32, c: i64, d: i8);
-        assert_eq!(SIZE11, 4);
-
-        const SIZE20: usize = count_args!(a[i32]);
-        assert_eq!(SIZE20, 1);
-        const SIZE21: usize = count_args!(a[i32], b[i32], c[i64]);
-        assert_eq!(SIZE21, 3);
-
-        const SIZE3: usize = count_args!(a, b: i64, c[8], d);
-        assert_eq!(SIZE3, 4);
-    }
 
     #[test]
     fn abi_arg_from_macro() {

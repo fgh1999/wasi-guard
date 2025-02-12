@@ -7,3 +7,11 @@ edition = "2021"
 wasmparser = "0.224.0"
 clap = { version = "4.5", features = ["derive"] }
 anyhow = "1.0.95"
+wasi-guard-macros = { path = "macros" }
+
+[dev-dependencies]
+wat = "1.225.0"
+
+[workspace]
+members = ["macros"]
+resolver = "2"
