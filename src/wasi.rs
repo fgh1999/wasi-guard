@@ -8,6 +8,7 @@ pub struct AbiArg<'a> {
     pub size: ArgSize,
 }
 
+#[allow(unused_macros)]
 macro_rules! desc_abi_arg {
     ($arg_name:ident [ $arg_size:expr ]) => {{
         const ARG_SIZE: $crate::wasi::ArgSize = $arg_size;
@@ -40,7 +41,7 @@ impl<'a, const ARG_NUM: usize> WasiAbiDescriptor<'a, ARG_NUM> {
     pub const fn ret_val_size() -> usize {
         core::mem::size_of::<i32>()
     }
-    fn args_are_distinct(&self) -> bool {
+    pub fn args_are_distinct(&self) -> bool {
         if self.args.is_empty() {
             return true;
         }
@@ -73,11 +74,6 @@ macro_rules! _desc_abi_arg_list {
         _desc_abi_arg_list!(@accum ($($tail)*) -> ($($body)* desc_abi_arg!($arg_name[$arg_size]),))
     };
 }
-macro_rules! desc_abi_arg_list {
-    [$($arg:tt)*] => {
-        _desc_abi_arg_list!(@accum ($($arg)*) -> ())
-    };
-}
 
 /// Macro to generate a WASI ABI descriptor.
 #[macro_export]
@@ -90,7 +86,7 @@ macro_rules! desc_wasi_abi {
     }};
     ($wasi_name:ident ( $($arg:tt)* ) ) => {{
         const ARG_NUM: usize = $crate::__count_idents!($($arg)*);
-        crate::wasi::WasiAbiDescriptor::<ARG_NUM> {
+        $crate::wasi::WasiAbiDescriptor::<ARG_NUM> {
             name: stringify!($wasi_name),
             args: _desc_abi_arg_list!(@accum ($($arg)*) -> ()),
         }
@@ -153,5 +149,13 @@ mod test {
         assert_eq!(E.args[1].size, size_of::<DefaultAbiArgType>());
         assert_eq!(E.args[2].size, size_of::<i64>());
         assert_eq!(E.args[3].size, size_of::<DefaultAbiArgType>());
+    }
+
+    #[test]
+    fn distinct_arg_names() {
+        assert!(E.args_are_distinct());
+
+        let wasi_abi = desc_wasi_abi!(wasi_abi(arg0, arg1, arg0));
+        assert!(!wasi_abi.args_are_distinct());
     }
 }

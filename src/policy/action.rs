@@ -10,9 +10,14 @@ pub enum Action {
     /// Terminate the WASM task.
     Kill,
 }
+impl Action {
+    const fn default() -> Action {
+        Self::Kill
+    }
+}
 
 impl Default for Action {
     fn default() -> Self {
-        Self::Kill
+        Self::default()
     }
 }

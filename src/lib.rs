@@ -4,6 +4,7 @@ pub mod abi;
 #[macro_use]
 mod wasi;
 mod policy;
+mod util;
 
 use std::{collections::HashMap, rc::Rc};
 
