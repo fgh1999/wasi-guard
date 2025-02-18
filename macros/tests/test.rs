@@ -69,3 +69,10 @@ fn count_types_in_tuple() {
     struct A;
     assert_eq!(<(u64, bool, A)>::LENGTH, 3);
 }
+
+#[test]
+fn repeat_tuple() {
+    use wasi_guard_macros::repeat_tuple;
+    #[allow(unused)]
+    type _A = repeat_tuple!(i32, 0);
+}

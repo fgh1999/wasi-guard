@@ -2,9 +2,7 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
     parse::{Parse, ParseStream},
-    parse_macro_input,
-    token::Comma,
-    Ident, LitInt, Result,
+    parse_macro_input, Ident, LitInt, Result,
 };
 
 struct AllTuples {
@@ -21,15 +19,16 @@ impl Parse for AllTuples {
 
         let numbers;
         syn::bracketed!(numbers in input);
-        let indices = numbers.parse_terminated(LitInt::parse, Comma)?;
+        let indices = numbers.parse_terminated(LitInt::parse, syn::Token![,])?;
         let indices: Vec<usize> = indices
             .iter()
             .map(|lit| lit.base10_parse().unwrap())
+            .take(2)
             .collect();
 
         input.parse::<syn::Token![:]>()?;
         let mut idents = vec![input.parse::<Ident>()?];
-        while input.parse::<Comma>().is_ok() {
+        while input.parse::<syn::Token![,]>().is_ok() {
             idents.push(input.parse::<Ident>()?);
         }
 
@@ -80,4 +79,40 @@ pub fn all_tuples(input: TokenStream) -> TokenStream {
             #invocations
         )*
     })
+}
+
+struct RepeatTupleInput {
+    r#type: Ident,
+    count: usize,
+}
+
+impl Parse for RepeatTupleInput {
+    fn parse(input: syn::parse::ParseStream) -> Result<Self> {
+        let r#type = input.parse::<Ident>()?;
+        input.parse::<syn::Token![,]>()?;
+        let count = input.parse::<LitInt>()?.base10_parse()?;
+        Ok(RepeatTupleInput { r#type, count })
+    }
+}
+
+/// Repeat a type `count` times in a tuple.
+///
+/// # Examples
+///
+/// ```ignore
+/// repeat_tuple!(Something, 0) -> ()
+/// repeat_tuple!(Something, 1) -> (Something,)
+/// repeat_tuple!(Something, 3) -> (Something, Something, Something)
+/// ```
+#[proc_macro]
+pub fn repeat_tuple(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as RepeatTupleInput);
+    let elements: Vec<_> = std::iter::repeat(input.r#type).take(input.count).collect();
+
+    if elements.is_empty() {
+        quote! { () }
+    } else {
+        quote! { (#(#elements,)*) }
+    }
+    .into()
 }
