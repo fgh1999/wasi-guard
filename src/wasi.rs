@@ -85,8 +85,7 @@ macro_rules! desc_wasi_abi {
         }
     }};
     ($wasi_name:ident ( $($arg:tt)* ) ) => {{
-        const ARG_NUM: usize = $crate::__count_idents!($($arg)*);
-        $crate::wasi::WasiAbiDescriptor::<ARG_NUM> {
+        $crate::wasi::WasiAbiDescriptor::<{$crate::__count_idents!($($arg)*)}> {
             name: stringify!($wasi_name),
             args: _desc_abi_arg_list!(@accum ($($arg)*) -> ()),
         }
