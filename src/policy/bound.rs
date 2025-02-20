@@ -1,6 +1,18 @@
+use core::fmt::Debug;
+use std::sync::Arc;
+
 use wasi_guard_macros::all_tuples;
 
-pub trait PredicateParam: Sized {}
+pub trait PredicateParam: Sized + Debug {}
+pub trait PredicateParams: Debug {}
+macro_rules! impl_predicate_param_for_tuple {
+    ($($P:ident),*) => {
+        impl<$($P),*> PredicateParams for ($($P,)*)
+        where $( $P : PredicateParam, )*
+        {}
+    };
+}
+all_tuples!(impl_predicate_param_for_tuple[0, 10]: P);
 
 macro_rules! impl_predicate_param {
     ($type:ty) => {
@@ -11,35 +23,30 @@ macro_rules! impl_predicate_param {
         impl_predicate_param!($($tail),*);
     };
 }
-impl_predicate_param!(i32, u32, i64, u64, f32, f64);
+impl_predicate_param!(bool, i32, u32, i64, u64, f32, f64);
 
-pub trait PredicateFunction<Params> {
+pub trait PredicateFunction<Params: PredicateParams> {
     fn call(&self, params: Params) -> bool;
 }
-impl<Params> PredicateFunction<Params> for Box<dyn PredicateFunction<Params>> {
-    fn call(&self, params: Params) -> bool {
-        self.as_ref().call(params)
-    }
-}
+
 impl<'a, T, Params> PredicateFunction<Params> for &'a [T]
 where
     T: PredicateFunction<Params>,
-    Params: Clone,
+    Params: Clone + PredicateParams,
 {
     fn call(&self, params: Params) -> bool {
         self.iter().all(|pred| pred.call(params.clone()))
     }
 }
-// TODO: 用函数式过程宏定义all_tuples!
 macro_rules! impl_predicate {
     ($($P:ident),*) => {
         impl<F, $($P,)*> $crate::policy::bound::PredicateFunction<( $($P,)* )> for F
             where F: ::std::ops::Fn($($P,)*) -> bool,
-                  $( $P : $crate::policy::bound::PredicateParam, )*
+                ( $($P,)* ) : $crate::policy::bound::PredicateParams,
         {
             #[allow(non_snake_case, clippy::too_many_arguments)]
             fn call(&self, ($($P,)*): ( $($P,)* )) -> bool {
-                self($($P,)*)
+                self($($P),*)
             }
         }
     };
@@ -47,26 +54,27 @@ macro_rules! impl_predicate {
 all_tuples!(impl_predicate[0, 10]: P);
 // TODO: impl compositions of [`PredicateFunction<Params>`]: `.and(..)` and `.or(..)`.
 
+#[derive(Clone)]
 pub struct AbiArgBound<Params>
 where
-    Params: core::fmt::Debug,
+    Params: PredicateParams,
 {
-    predicate: Box<dyn PredicateFunction<Params>>,
+    predicate: Arc<dyn PredicateFunction<Params>>,
     _phantom: core::marker::PhantomData<Params>,
 }
-impl<Params> AbiArgBound<Params>
+impl<Params: PredicateParams> AbiArgBound<Params>
 where
-    Params: core::fmt::Debug,
+    Params: Debug,
 {
     fn from_predicate(predicate: impl PredicateFunction<Params> + 'static) -> Self {
         Self {
-            predicate: Box::new(predicate),
+            predicate: Arc::new(predicate),
             _phantom: core::marker::PhantomData,
         }
     }
     fn from_boxed_predicate(predicate: Box<dyn PredicateFunction<Params>>) -> Self {
         Self {
-            predicate,
+            predicate: Arc::from(predicate),
             _phantom: core::marker::PhantomData,
         }
     }
@@ -75,7 +83,7 @@ where
 macro_rules! impl_from_fn_for_bound {
     ($($P:ident),*) => {
         impl<Predicate, $($P,)*> From<Predicate> for AbiArgBound<( $($P,)* )>
-        where $( $P : PredicateParam, )* $( $P : core::fmt::Debug, )*
+        where ( $($P,)* ) : $crate::policy::bound::PredicateParams,
             Predicate : Fn($($P,)*) -> bool + 'static,
         {
             fn from(predicate: Predicate) -> Self {
@@ -84,7 +92,7 @@ macro_rules! impl_from_fn_for_bound {
         }
 
         impl<$($P,)*> From<Box<dyn PredicateFunction<($($P,)*)>>> for AbiArgBound<( $($P,)* )>
-        where $( $P : PredicateParam, )* $( $P : core::fmt::Debug, )*
+        where ( $($P,)* ) : $crate::policy::bound::PredicateParams,
         {
             fn from(predicate: Box<dyn PredicateFunction<($($P,)*)>>) -> Self {
                 Self::from_boxed_predicate(predicate)
@@ -102,8 +110,7 @@ pub trait CheckArgBound {
 macro_rules! impl_check_for_bound {
     ($($P:ident),*) => {
         impl<$($P,)*> crate::policy::bound::CheckArgBound for AbiArgBound<( $($P,)* )>
-        where $( $P : $crate::policy::bound::PredicateParam, )*
-            $( $P : core::fmt::Debug, )*
+        where ( $($P,)* ) : $crate::policy::bound::PredicateParams,
         {
             type Params = ( $($P,)* );
             #[allow(non_snake_case, clippy::too_many_arguments)]
@@ -140,16 +147,11 @@ mod test {
     #[test]
     fn bound_on_closure() {
         use crate::policy::bound::CheckArgBound;
-        let bound_0_0 = AbiArgBound {
-            predicate: Box::new(|| true),
-            _phantom: core::marker::PhantomData,
-        };
+        let bound_0_0: AbiArgBound<()> = (|| true).into();
         assert!(bound_0_0.check(()));
 
-        let bound_2_0 = AbiArgBound::<(i32, u64)> {
-            predicate: Box::new(|a: i32, b: u64| -> bool { a > b as i32 }),
-            _phantom: core::marker::PhantomData::<(i32, u64)>,
-        };
+        let bound_2_0: AbiArgBound<(i32, u64)> =
+            Box::new(|a: i32, b: u64| -> bool { a > b as i32 }).into();
         assert!(bound_2_0.check((2, 1)));
         assert!(!bound_2_0.check((1, 2)));
     }

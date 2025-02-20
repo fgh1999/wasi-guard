@@ -1,12 +1,12 @@
 use wasi_guard_macros::all_tuples;
 
-pub(crate) trait TupleLength {
-    const TYPE_LENGTH: usize;
+pub(crate) trait Tuple {
+    const LENGTH: usize;
 }
 macro_rules! impl_tuple_length {
     ($($t:ident),*) => {
-        impl<$($t),*> TupleLength for ($($t,)*) {
-            const TYPE_LENGTH: usize = $crate::__count_idents!($($t),*);
+        impl<$($t),*> Tuple for ($($t,)*) {
+            const LENGTH: usize = $crate::__count_idents!($($t),*);
         }
     };
 }
@@ -18,9 +18,9 @@ mod test {
 
     #[test]
     fn test_tuple_length() {
-        assert_eq!(<() as TupleLength>::TYPE_LENGTH, 0);
-        assert_eq!(<(i32,) as TupleLength>::TYPE_LENGTH, 1);
+        assert_eq!(<() as Tuple>::LENGTH, 0);
+        assert_eq!(<(i32,) as Tuple>::LENGTH, 1);
         struct Struct0;
-        assert_eq!(<(i32, i64, Struct0) as TupleLength>::TYPE_LENGTH, 3);
+        assert_eq!(<(i32, i64, Struct0) as Tuple>::LENGTH, 3);
     }
 }
