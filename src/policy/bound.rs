@@ -1,10 +1,12 @@
 use core::fmt::Debug;
-use std::sync::Arc;
+use std::{marker::PhantomData, sync::Arc};
 
 use wasi_guard_macros::all_tuples;
 
+use crate::util::Tuple;
+
 pub trait PredicateParam: Sized + Debug {}
-pub trait PredicateParams: Debug {}
+pub trait PredicateParams: Tuple + Debug {}
 macro_rules! impl_predicate_param_for_tuple {
     ($($P:ident),*) => {
         impl<$($P),*> PredicateParams for ($($P,)*)
@@ -28,7 +30,29 @@ impl_predicate_param!(bool, i32, u32, i64, u64, f32, f64);
 pub trait PredicateFunction<Params: PredicateParams> {
     fn call(&self, params: Params) -> bool;
 }
-
+macro_rules! impl_predicate_function_for_ptr {
+    ($($Ptr_path:tt)+) => {
+        impl<T, Params> PredicateFunction<Params> for $($Ptr_path)*<T>
+        where
+            T: PredicateFunction<Params>,
+            Params: PredicateParams,
+        {
+            fn call(&self, params: Params) -> bool {
+                self.as_ref().call(params)
+            }
+        }
+        impl<Params> PredicateFunction<Params> for $($Ptr_path)*<dyn PredicateFunction<Params>>
+        where
+            Params: PredicateParams,
+        {
+            fn call(&self, params: Params) -> bool {
+                self.as_ref().call(params)
+            }
+        }
+    };
+}
+impl_predicate_function_for_ptr!(std::sync::Arc);
+impl_predicate_function_for_ptr!(std::rc::Rc);
 impl<'a, T, Params> PredicateFunction<Params> for &'a [T]
 where
     T: PredicateFunction<Params>,
@@ -41,7 +65,7 @@ where
 macro_rules! impl_predicate {
     ($($P:ident),*) => {
         impl<F, $($P,)*> $crate::policy::bound::PredicateFunction<( $($P,)* )> for F
-            where F: ::std::ops::Fn($($P,)*) -> bool,
+            where F: ::core::ops::Fn($($P,)*) -> bool,
                 ( $($P,)* ) : $crate::policy::bound::PredicateParams,
         {
             #[allow(non_snake_case, clippy::too_many_arguments)]
@@ -54,31 +78,133 @@ macro_rules! impl_predicate {
 all_tuples!(impl_predicate[0, 10]: P);
 // TODO: impl compositions of [`PredicateFunction<Params>`]: `.and(..)` and `.or(..)`.
 
-#[derive(Clone)]
-pub struct AbiArgBound<Params>
+pub enum PredicateComposition<Params, A, B>
 where
     Params: PredicateParams,
+    A: PredicateFunction<Params>,
+    B: PredicateFunction<Params>,
 {
-    predicate: Arc<dyn PredicateFunction<Params>>,
-    _phantom: core::marker::PhantomData<Params>,
+    And(A, B, PhantomData<Arc<dyn PredicateFunction<Params>>>),
+    Or(A, B, PhantomData<Arc<dyn PredicateFunction<Params>>>),
 }
-impl<Params: PredicateParams> AbiArgBound<Params>
+impl<Params, A, B> PredicateComposition<Params, A, B>
 where
-    Params: Debug,
+    Params: PredicateParams,
+    A: PredicateFunction<Params>,
+    B: PredicateFunction<Params>,
 {
+    pub fn all(a: A, b: B) -> Self {
+        Self::And(a, b, PhantomData)
+    }
+    pub fn any(a: A, b: B) -> Self {
+        Self::Or(a, b, PhantomData)
+    }
+
+    pub fn and<Other>(self, other: Other) -> PredicateComposition<Params, Self, Other>
+    where
+        Other: PredicateFunction<Params>,
+        Params: Clone,
+    {
+        <Self as CompositePredicate<Params, Other>>::and(self, other)
+    }
+    pub fn or<Other>(self, other: Other) -> PredicateComposition<Params, Self, Other>
+    where
+        Other: PredicateFunction<Params>,
+        Params: Clone,
+    {
+        <Self as CompositePredicate<Params, Other>>::or(self, other)
+    }
+}
+
+impl<Params, A, B> PredicateFunction<Params> for PredicateComposition<Params, A, B>
+where
+    Params: PredicateParams + Clone,
+    A: PredicateFunction<Params>,
+    B: PredicateFunction<Params>,
+{
+    fn call(&self, params: Params) -> bool {
+        match self {
+            Self::And(a, b, _) => a.call(params.clone()) && b.call(params),
+            Self::Or(a, b, _) => a.call(params.clone()) || b.call(params),
+        }
+    }
+}
+
+trait CompositePredicate<Params: PredicateParams + Clone, Other>
+where
+    Self: Sized + PredicateFunction<Params>,
+    Other: PredicateFunction<Params>,
+{
+    fn and(self, other: Other) -> PredicateComposition<Params, Self, Other>;
+    fn or(self, other: Other) -> PredicateComposition<Params, Self, Other>;
+}
+impl<Params, A, B> CompositePredicate<Params, B> for A
+where
+    Params: PredicateParams + Clone,
+    A: PredicateFunction<Params>,
+    B: PredicateFunction<Params>,
+{
+    fn and(self, other: B) -> PredicateComposition<Params, Self, B> {
+        PredicateComposition::all(self, other)
+    }
+    fn or(self, other: B) -> PredicateComposition<Params, Self, B> {
+        PredicateComposition::any(self, other)
+    }
+}
+// macro_rules! impl_composite_predicate {
+//     ($($P:ident),*) => {
+//         impl<F, $($P,)* Other> CompositePredicate<( $($P,)* ), Other> for F
+//             where F: ::std::ops::Fn($($P,)*) -> bool,
+//                 ( $($P,)* ) : $crate::policy::bound::PredicateParams,
+//                 ( $($P,)* ) : ::core::clone::Clone,
+//                 Other: $crate::policy::bound::PredicateFunction<( $($P,)* )>,
+//         {
+//             fn and(self, other: Other) -> PredicateComposition<( $($P,)* ), Self, Other> {
+//                 PredicateComposition::all(self, other)
+//             }
+//             fn or(self, other: Other) -> PredicateComposition<( $($P,)* ), Self, Other> {
+//                 PredicateComposition::any(self, other)
+//             }
+//         }
+//     };
+// }
+// all_tuples!(impl_composite_predicate[0, 10]: P);
+
+#[derive(Clone)]
+pub struct AbiArgBound<Params: PredicateParams> {
+    predicate: Arc<dyn PredicateFunction<Params>>,
+}
+impl<Params: PredicateParams> AbiArgBound<Params> {
     fn from_predicate(predicate: impl PredicateFunction<Params> + 'static) -> Self {
         Self {
             predicate: Arc::new(predicate),
-            _phantom: core::marker::PhantomData,
         }
     }
     fn from_boxed_predicate(predicate: Box<dyn PredicateFunction<Params>>) -> Self {
         Self {
             predicate: Arc::from(predicate),
-            _phantom: core::marker::PhantomData,
         }
     }
 }
+// impl<Params: PredicateParams + Clone> AbiArgBound<Params> {
+//     pub fn and<Other>(self, other: Other) -> Self
+//     where
+//         Other: PredicateFunction<Params>,
+//         Params: Clone,
+//     {
+//         let Self { predicate, ..} = self;
+//         let predicate = PredicateComposition::all(predicate, other);
+//         Self::from_predicate(predicate)
+//     }
+//     pub fn or<Other>(self, other: Other) -> Self
+//     where
+//         Other: PredicateFunction<Params>,
+//         Params: Clone,
+//     {
+//         todo!()
+//         // <Self as CompositePredicate<Params, Other>>::or(self, other)
+//     }
+// }
 
 macro_rules! impl_from_fn_for_bound {
     ($($P:ident),*) => {
@@ -202,5 +328,37 @@ mod test {
             bound_list.iter().map(|&bound| bound.into()).collect();
         assert!(bound_list.iter().all(|bound| bound.check((222,))));
         assert!(!bound_list.iter().all(|bound| bound.check((111,))));
+    }
+
+    #[test]
+    fn predicate_compositions() {
+        use crate::policy::bound::{PredicateComposition, PredicateFunction};
+
+        let pred_0_0 = || true;
+        let pred_0_1 = || false;
+        let pred_0_2 = PredicateComposition::all(pred_0_0, pred_0_1);
+        assert!(!pred_0_2.call(()));
+        let pred_0_3 = PredicateComposition::any(pred_0_0, pred_0_1);
+        assert!(pred_0_3.call(()));
+
+        let pred_1_0 = |a: i32| a > 0;
+        let pred_1_1 = |b: i32| b < 10;
+        let pred_1_2 = |x: i32| x > 0 && x < 10;
+        // homomorphism
+        let pred_1_3 = PredicateComposition::all(pred_1_0, pred_1_1);
+        for i in -20..20 {
+            assert_eq!(pred_1_2(i), pred_1_3.call((i,)));
+        }
+        let pred_1_4 = |x: i32| x > 0 || x < 10;
+        let pred_1_5 = PredicateComposition::any(pred_1_0, pred_1_1);
+        for i in -20..20 {
+            assert_eq!(pred_1_4(i,), pred_1_5.call((i,)));
+        }
+
+        let pred_2_0 = |a: i32, b: u64| a < b as i32;
+        let pred_2_1 = |a: i32, b: u64| a > b as i32;
+        let pred_2_2 = PredicateComposition::all(pred_2_0, pred_2_1);
+        assert!(!pred_2_2.call((-1, 1)));
+        assert!(!pred_2_2.call((0, 0)));
     }
 }
