@@ -1,6 +1,7 @@
 use wasi_guard_macros::all_tuples;
 
-pub(crate) trait Tuple {
+/// An extended Tuple trait of [`core::marker::Tuple`].
+pub(crate) trait Tuple: core::marker::Tuple {
     const LENGTH: usize;
 }
 macro_rules! impl_tuple_length {
