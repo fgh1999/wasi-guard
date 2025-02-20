@@ -29,6 +29,7 @@ impl_predicate_param!(bool, i32, u32, i64, u64, f32, f64);
 
 pub trait PredicateFunction<Params: PredicateParams> {
     fn call(&self, params: Params) -> bool;
+    // TODO: automatic param type conversion
 }
 macro_rules! impl_predicate_function_for_ptr {
     ($($Ptr_path:tt)+) => {
@@ -80,16 +81,16 @@ all_tuples!(impl_predicate[0, 10]: P);
 
 pub enum PredicateComposition<Params, A, B>
 where
-    Params: PredicateParams,
+    Params: PredicateParams + Clone,
     A: PredicateFunction<Params>,
     B: PredicateFunction<Params>,
 {
-    And(A, B, PhantomData<Arc<dyn PredicateFunction<Params>>>),
-    Or(A, B, PhantomData<Arc<dyn PredicateFunction<Params>>>),
+    And(A, B, PhantomData<fn(Params)>),
+    Or(A, B, PhantomData<fn(Params)>),
 }
 impl<Params, A, B> PredicateComposition<Params, A, B>
 where
-    Params: PredicateParams,
+    Params: PredicateParams + Clone,
     A: PredicateFunction<Params>,
     B: PredicateFunction<Params>,
 {
@@ -182,29 +183,33 @@ impl<Params: PredicateParams> AbiArgBound<Params> {
     }
     fn from_boxed_predicate(predicate: Box<dyn PredicateFunction<Params>>) -> Self {
         Self {
-            predicate: Arc::from(predicate),
+            predicate: predicate.into(),
         }
     }
 }
-// impl<Params: PredicateParams + Clone> AbiArgBound<Params> {
-//     pub fn and<Other>(self, other: Other) -> Self
-//     where
-//         Other: PredicateFunction<Params>,
-//         Params: Clone,
-//     {
-//         let Self { predicate, ..} = self;
-//         let predicate = PredicateComposition::all(predicate, other);
-//         Self::from_predicate(predicate)
-//     }
-//     pub fn or<Other>(self, other: Other) -> Self
-//     where
-//         Other: PredicateFunction<Params>,
-//         Params: Clone,
-//     {
-//         todo!()
-//         // <Self as CompositePredicate<Params, Other>>::or(self, other)
-//     }
-// }
+impl<Params: PredicateParams + Clone> AbiArgBound<Params>
+where
+    Self: 'static,
+{
+    pub fn and(self, other: Self) -> Self {
+        let Self {
+            predicate: this, ..
+        } = self;
+        let Self {
+            predicate: other, ..
+        } = other;
+        Self::from_predicate(PredicateComposition::all(this, other))
+    }
+    pub fn or(self, other: Self) -> Self {
+        let Self {
+            predicate: this, ..
+        } = self;
+        let Self {
+            predicate: other, ..
+        } = other;
+        Self::from_predicate(PredicateComposition::any(this, other))
+    }
+}
 
 macro_rules! impl_from_fn_for_bound {
     ($($P:ident),*) => {
@@ -325,7 +330,7 @@ mod test {
         use crate::policy::bound::CheckArgBound;
         let bound_list = [|a: i32| a > 0, |a: i32| a < 233, |a: i32| a % 2 == 0];
         let bound_list: Vec<AbiArgBound<(i32,)>> =
-            bound_list.iter().map(|&bound| bound.into()).collect();
+            bound_list.into_iter().map(|bound| bound.into()).collect();
         assert!(bound_list.iter().all(|bound| bound.check((222,))));
         assert!(!bound_list.iter().all(|bound| bound.check((111,))));
     }
@@ -360,5 +365,73 @@ mod test {
         let pred_2_2 = PredicateComposition::all(pred_2_0, pred_2_1);
         assert!(!pred_2_2.call((-1, 1)));
         assert!(!pred_2_2.call((0, 0)));
+    }
+
+    #[test]
+    fn bound_compositions() {
+        use crate::policy::bound::{AbiArgBound, CheckArgBound};
+
+        let bound = [|a: i32| a < 0, |a: i32| a > 233, |a: i32| a % 2 == 0]
+            .into_iter()
+            .map(AbiArgBound::from_predicate)
+            .fold(AbiArgBound::from_predicate(|_| false), |a, b| a.or(b));
+        assert!(bound.check((100,)));
+        assert!(!bound.check((223,)));
+        assert!(bound.check((0,)));
+        assert!(bound.check((-337,)));
+        assert!(bound.check((299,)));
+
+        let bounds: Vec<AbiArgBound<(i32,)>> =
+            [|a: i32| a > 0, |a: i32| a < 233, |a: i32| a % 2 == 0]
+                .into_iter()
+                .map(|bound| bound.into())
+                .collect();
+        let bound = bounds
+            .into_iter()
+            .fold(AbiArgBound::from_predicate(|_| true), |a, b| a.and(b));
+        assert!(bound.check((222,)));
+        assert!(bound.check((100,)));
+        assert!(!bound.check((111,)));
+        assert!(!bound.check((-1,)));
+        assert!(!bound.check((256,)));
+
+        let local_bound = bound.clone();
+        let closure = move || {
+            fn ground_truth(x: i32) -> bool {
+                x > 0 && x < 233 && x % 2 == 0
+            }
+            use rand::Rng;
+            let mut rng = rand::rng();
+            for x in (0..1000).map(|_| rng.random_range(-300..300)) {
+                assert_eq!(ground_truth(x), local_bound.check((x,)));
+            }
+        };
+        closure();
+
+        let unstatic_bound = || {
+            use rand::Rng;
+            let mut rng = rand::rng();
+
+            let (random_bounds, random_truth) = {
+                let seq: Vec<_> = (0..10).map(|_| rng.random_range(-200..200)).collect();
+
+                let bounds: Vec<_> = seq.iter().cloned().map(|x| move |a: i32| a != x).collect();
+
+                let ground_truth = move |x: i32| seq.iter().all(|&y| x != y);
+                (bounds, ground_truth)
+            };
+
+            let bounds: Vec<_> = random_bounds
+                .into_iter()
+                .map(AbiArgBound::from_predicate)
+                .collect();
+            let bound = bounds
+                .into_iter()
+                .fold(AbiArgBound::from_predicate(|_| true), |a, b| a.and(b));
+            for x in (0..1000).map(|_| rng.random_range(-400..400)) {
+                assert_eq!(random_truth(x), bound.check((x,)));
+            }
+        };
+        unstatic_bound();
     }
 }
