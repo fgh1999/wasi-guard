@@ -8,7 +8,8 @@ pub struct AbiArg<'a> {
     pub size: ArgSize,
 }
 
-#[allow(unused_macros)]
+#[doc(hidden)]
+#[macro_export]
 macro_rules! desc_abi_arg {
     ($arg_name:ident [ $arg_size:expr ]) => {{
         const ARG_SIZE: $crate::wasi::ArgSize = $arg_size;
@@ -51,27 +52,29 @@ impl<'a, const ARG_NUM: usize> WasiAbiDescriptor<'a, ARG_NUM> {
     }
 }
 
+#[doc(hidden)]
+#[macro_export]
 macro_rules! _desc_abi_arg_list {
     (@as_expr $e:expr) => {{$e}};
-    (@accum () -> ($($body:tt)*)) => {_desc_abi_arg_list!(@as_expr [$($body)*])};
+    (@accum () -> ($($body:tt)*)) => {$crate::_desc_abi_arg_list!(@as_expr [$($body)*])};
     // drop heading ','s in arg tts
     (@accum (, $($arg:tt)*) -> ($($body:tt)*)) => {
-        _desc_abi_arg_list!(@accum ($($arg)*) -> ($($body)*))
+        $crate::_desc_abi_arg_list!(@accum ($($arg)*) -> ($($body)*))
     };
     // arg ...
     (@accum ($arg_name:ident) -> ($($body:tt)*)) => {
-        _desc_abi_arg_list!(@accum () -> ($($body)* desc_abi_arg!($arg_name),))
+        $crate::_desc_abi_arg_list!(@accum () -> ($($body)* $crate::desc_abi_arg!($arg_name),))
     };
     (@accum ($arg_name:ident, $($tail:tt)*) -> ($($body:tt)*)) => {
-        _desc_abi_arg_list!(@accum ($($tail)*) -> ($($body)* desc_abi_arg!($arg_name),))
+        $crate::_desc_abi_arg_list!(@accum ($($tail)*) -> ($($body)* $crate::desc_abi_arg!($arg_name),))
     };
     // arg: type ...
     (@accum ($arg_name:ident:$arg_type:tt $($tail:tt)*) -> ($($body:tt)*)) => {
-        _desc_abi_arg_list!(@accum ($($tail)*) -> ($($body)* desc_abi_arg!($arg_name:$arg_type),))
+        $crate::_desc_abi_arg_list!(@accum ($($tail)*) -> ($($body)* $crate::desc_abi_arg!($arg_name:$arg_type),))
     };
     // arg[size] ...
     (@accum ($arg_name:ident[$arg_size:expr]  $($tail:tt)*) -> ($($body:tt)*)) => {
-        _desc_abi_arg_list!(@accum ($($tail)*) -> ($($body)* desc_abi_arg!($arg_name[$arg_size]),))
+        $crate::_desc_abi_arg_list!(@accum ($($tail)*) -> ($($body)* $crate::desc_abi_arg!($arg_name[$arg_size]),))
     };
 }
 
@@ -87,7 +90,7 @@ macro_rules! desc_wasi_abi {
     ($wasi_name:ident ( $($arg:tt)* ) ) => {{
         $crate::wasi::WasiAbiDescriptor::<{$crate::__count_idents!($($arg)*)}> {
             name: stringify!($wasi_name),
-            args: _desc_abi_arg_list!(@accum ($($arg)*) -> ()),
+            args: $crate::_desc_abi_arg_list!(@accum ($($arg)*) -> ()),
         }
     }};
 }

@@ -4,10 +4,9 @@
 #![feature(generic_const_exprs)]
 
 pub mod abi;
-#[macro_use]
-mod wasi;
-mod policy;
-mod util;
+pub mod policy;
+pub mod util;
+pub mod wasi;
 
 use std::{collections::HashMap, rc::Rc};
 
@@ -86,6 +85,7 @@ pub fn parse_import_funcs(wasm_binary: &[u8]) -> Result<Vec<ImportFunc>> {
     Ok(import_funcs)
 }
 
+#[doc(hidden)]
 #[macro_export]
 macro_rules! __count_idents {
     () => { 0usize };

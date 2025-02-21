@@ -9,8 +9,7 @@ use crate::{
     wasi::{AbiArg, WasiAbiDescriptor},
 };
 
-// If `abi` satisfies `bound`, then `action`.
-// statement 之间只能合并（AND）
+/// If `abi` [satisfies `bound`], then `action`.
 pub struct Statement<'desc, Params: Tuple + PredicateParams>
 where
     [(); Params::LENGTH]:,
@@ -19,14 +18,7 @@ where
     bound: Option<AbiArgBound<Params>>,
     action: Action,
 }
-// claim a statement:
-// action { $(abi $(where bound)?),+ }
 
-// macro_rules! statement {
-//     {$action:ident { $($abi:ident $(where $bound:expr)?),+ } } => {
-
-//     };
-// }
 impl<'desc, Params: Tuple + PredicateParams> Statement<'desc, Params>
 where
     [(); Params::LENGTH]:,
@@ -67,8 +59,9 @@ macro_rules! impl_check_bound_for_statement {
             ( $($P,)* ) : $crate::policy::bound::PredicateParams,
             ( $($P,)* ) : $crate::util::Tuple,
         {
+            /// Returns `true` if there is no bound.
             #[allow(unused)]
-            fn check_bound(&self, params: ( $($P,)* )) -> bool {
+            pub fn check_bound(&self, params: ( $($P,)* )) -> bool {
                 use $crate::policy::bound::CheckArgBound;
                 self.bound.as_ref().map_or(true, |bound| bound.check(params))
             }
@@ -77,43 +70,17 @@ macro_rules! impl_check_bound_for_statement {
 }
 all_tuples!(impl_check_bound_for_statement[0,10]: P);
 
-pub trait Stmt<'s> {
-    fn arg_num(&self) -> usize;
-    fn arg_at(&self, index: usize) -> Option<&'s AbiArg>;
-    // fn bound(&self) -> &'s AbiArgBound<Self::ARG_NUM>;
-    // fn check_bound<Params>(&self, params: Params) -> bool where Params: core::fmt::Debug;
-    fn action(&self) -> &Action;
-}
+// pub trait Stmt<'s> {
+//     fn arg_num(&self) -> usize;
+//     fn arg_at(&self, index: usize) -> Option<&'s AbiArg>;
+//     // fn bound(&self) -> &'s AbiArgBound<Self::ARG_NUM>;
+//     // fn check_bound<Params>(&self, params: Params) -> bool where Params: core::fmt::Debug;
+//     fn action(&self) -> &Action;
+// }
 
-// pub trait ClaimStatement<Params: Tuple + Debug> {
-//     fn trigger(&self, action: Action) -> Statement<'_, Params>
-//     where
-//         [(); Params::LENGTH]:;
-// }
-// #[allow(unused)]
-// macro_rules! impl_claim_statement_for_tuple {
-//     ($($P:ident),*) => {
-//         impl<$($P,)*> ClaimStatement<( $($P,)* )> for WasiAbiDescriptor<'_, {<( $($P,)* )>::LENGTH}>
-//         where ( $($P,)* ) : $crate::policy::bound::PredicateParams,
-//             ( $($P,)* ) : $crate::util::Tuple,
-//         {
-//             fn trigger(
-//                 &self,
-//                 action: Action,
-//             ) -> Statement<'_, ( $($P,)* )> where [(); <( $($P,)* )>::LENGTH]: {
-//                 Statement {
-//                     abi: self,
-//                     bound: None,
-//                     action,
-//                 }
-//             }
-//         }
-//     };
-// }
-// all_tuples!(impl_claim_statement_for_tuple[0,10]: P);
 macro_rules! replace_tt_with_dt {
     ($($tt:tt)*) => {
-        i32
+        $crate::wasi::DefaultAbiArgType
     };
 }
 // Use i32 as the default type of predicate parameters
@@ -132,15 +99,76 @@ macro_rules! impl_trigger_for_wasi_abi {
 }
 all_tuples!(impl_trigger_for_wasi_abi[0,10]: P);
 
+mod act_statement {
+    #[macro_export]
+    macro_rules! statement {
+        ($abi:path) => {{
+            ($abi).trigger($crate::policy::action::Action::default())
+        }};
+        ($abi:path $(where)? => $($act_type:tt)+) => {{
+            ($abi).trigger($($act_type)+)
+        }};
+        ($abi:path where $bound:expr => $($act_type:tt)+) => {{
+            ($abi).trigger($($act_type)+)
+            .when($bound)
+        }};
+    }
+    // Macro_expanded macro_rules are not permitted to be used with absolute path,
+    // So here are just the elementary implementations.
+    #[macro_export]
+    macro_rules! _inner_allow {
+        ($abi:path $(where)?) => {{
+            $crate::statement!($abi => $crate::policy::action::Action::Allow)
+        }};
+        ($abi:path where $bound:expr) => {{
+            $crate::statement!($abi where $bound => $crate::policy::action::Action::Allow)
+        }};
+    }
+    #[macro_export]
+    macro_rules! _inner_kill {
+        ($abi:path $(where)?) => {{
+            $crate::statement!($abi => $crate::policy::action::Action::Kill)
+        }};
+        ($abi:path where $bound:expr) => {{
+            $crate::statement!($abi where $bound => $crate::policy::action::Action::Kill)
+        }};
+    }
+    #[macro_export]
+    macro_rules! _inner_log {
+        ($abi:path $(where)?) => {{
+            $crate::statement!($abi => $crate::policy::action::Action::Log)
+        }};
+        ($abi:path where $bound:expr) => {{
+            $crate::statement!($abi where $bound => $crate::policy::action::Action::Log)
+        }};
+    }
+
+    #[macro_export]
+    macro_rules! _inner_return_errno {
+        ($abi:path $(where)? => $errno:expr) => {{
+            const ERRNO: $crate::policy::action::WasiErrno = $errno;
+            const ACT: $crate::policy::action::Action = $crate::policy::action::Action::ReturnErrno(ERRNO);
+            $crate::statement!($abi => ACT)
+        }};
+        ($abi:path where $bound:expr => $errno:expr) => {{
+            const ERRNO: $crate::policy::action::WasiErrno = $errno;
+            const ACT: $crate::policy::action::Action = $crate::policy::action::Action::ReturnErrno(ERRNO);
+            $crate::statement!($abi where $bound => ACT)
+        }};
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use crate::policy::{bound::AbiArgBound, stmt::Action};
+    use crate::{
+        desc_wasi_abi,
+        policy::{bound::AbiArgBound, stmt::Action},
+        wasi::WasiAbiDescriptor,
+    };
+    const WASI: WasiAbiDescriptor<2> = desc_wasi_abi!(clock_time_get(clock_id, precision[8]));
 
     #[test]
     fn claim_statement() {
-        use crate::wasi::WasiAbiDescriptor;
-
-        const WASI: WasiAbiDescriptor<2> = desc_wasi_abi!(clock_time_get(clock_id, precision[8]));
         let statement = WASI.trigger(Action::Allow);
         assert_eq!(statement.abi.name, "clock_time_get");
 
@@ -169,5 +197,47 @@ mod test {
         assert_eq!(statement.abi.args.len(), 2);
         assert!(statement.check_bound((1, true)));
         assert!(!statement.check_bound((0 - 1, false)));
+    }
+
+    #[test]
+    fn statement_macro() {
+        use crate::statement;
+        let statement = statement!(WASI => Action::Kill);
+        // always `true` on `check_bound` because these is no bound
+        assert!(statement.check_bound((1, 0)));
+        assert!(statement.check_bound((0 - 1, 0)));
+        let statement = statement!(WASI);
+        assert_eq!(statement.action, Action::default());
+
+        let statement = statement!(WASI where => Action::Kill);
+        // always `true` on `check_bound` because these is no bound
+        assert!(statement.check_bound((1, 0)));
+        assert!(statement.check_bound((0 - 1, 0)));
+
+        let statement = statement!(WASI where |a: i32, _: bool| a > 0 => Action::Kill);
+        assert_eq!(statement.abi.name, "clock_time_get");
+        assert_eq!(statement.abi.args.len(), 2);
+        assert!(statement.check_bound((1, true)));
+        assert!(!statement.check_bound((0 - 1, false)));
+
+        mod tmp {
+            use super::*;
+            pub const WASI: WasiAbiDescriptor<2> =
+                desc_wasi_abi!(clock_time_get(clock_id, precision[8]));
+        }
+        let _statement = statement!(tmp::WASI);
+    }
+
+    #[test]
+    fn inner_statement_macros() {
+        use crate::{_inner_allow, _inner_kill, _inner_log, _inner_return_errno};
+        let allow_stat = _inner_allow!(WASI);
+        assert_eq!(allow_stat.action, Action::Allow);
+        let kill_stat = _inner_kill!(WASI);
+        assert_eq!(kill_stat.action, Action::Kill);
+        let log_stat = _inner_log!(WASI where |x: i32, y: i64| x as i64 + y > 0);
+        assert_eq!(log_stat.action, Action::Log);
+        let ret_stat = _inner_return_errno!(WASI => 23);
+        assert_eq!(ret_stat.action, Action::ReturnErrno(23));
     }
 }

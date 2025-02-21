@@ -1,5 +1,5 @@
-mod action;
-mod bound;
+pub mod action;
+pub mod bound;
 mod stmt;
 
 use action::Action;
@@ -13,4 +13,11 @@ impl Policy {
         self.default_action = action;
         self
     }
+}
+
+#[macro_export]
+macro_rules! policy {
+    () => {
+        todo!()
+    };
 }
