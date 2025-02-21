@@ -46,6 +46,28 @@ where
         }
     }
 
+    pub fn and_when(
+        self,
+        other_bound: impl Into<AbiArgBound<Params>>,
+        // BUG: AbiArgBound<Params>: 'static
+    ) -> Self
+    where
+        Params: Clone,
+        AbiArgBound<Params>: 'static,
+    {
+        let Self { abi, bound, action } = self;
+        let other_bound: AbiArgBound<Params> = other_bound.into();
+        let bound = match bound {
+            None => other_bound,
+            Some(b) => b.and(other_bound),
+        };
+        Statement {
+            abi,
+            bound: Some(bound),
+            action,
+        }
+    }
+
     pub fn trigger(mut self, action: Action) -> Statement<'desc, Params> {
         self.action = action;
         self
@@ -111,6 +133,11 @@ mod act_statement {
         ($abi:path where $bound:expr => $($act_type:tt)+) => {{
             ($abi).trigger($($act_type)+)
             .when($bound)
+        }};
+        ($abi:path where $bound:expr, $($other_bound:expr),+ => $($act_type:tt)+) => {{
+            ($abi).trigger($($act_type)+)
+            .when($bound)
+            $(.and_when($other_bound))+
         }};
     }
     // Macro_expanded macro_rules are not permitted to be used with absolute path,
@@ -214,11 +241,13 @@ mod test {
         assert!(statement.check_bound((1, 0)));
         assert!(statement.check_bound((0 - 1, 0)));
 
-        let statement = statement!(WASI where |a: i32, _: bool| a > 0 => Action::Kill);
+        let other_bound = |_: i32, b: bool| b;
+        let statement = statement!(WASI where |a: i32, _: bool| a > 0, other_bound => Action::Kill);
         assert_eq!(statement.abi.name, "clock_time_get");
         assert_eq!(statement.abi.args.len(), 2);
         assert!(statement.check_bound((1, true)));
-        assert!(!statement.check_bound((0 - 1, false)));
+        assert!(!statement.check_bound((1, false)));
+        assert!(!statement.check_bound((0 - 1, true)));
 
         mod tmp {
             use super::*;
