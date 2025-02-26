@@ -16,13 +16,14 @@ where
 {
     abi: &'desc WasiAbiDescriptor<'desc, { Params::LENGTH }>,
     bound: Option<AbiArgBound<Params>>,
-    action: Action,
+    pub action: Action,
 }
 
 impl<'desc, Params: Tuple + PredicateParams> Statement<'desc, Params>
 where
     [(); Params::LENGTH]:,
 {
+    // TODO: into const fn
     pub fn when<NewParams>(
         self,
         bound: impl Into<AbiArgBound<NewParams>> + 'desc,
@@ -46,6 +47,7 @@ where
         }
     }
 
+    // TODO: into const fn
     pub fn and_when(
         self,
         other_bound: impl Into<AbiArgBound<Params>>,
@@ -68,7 +70,7 @@ where
         }
     }
 
-    pub fn trigger(mut self, action: Action) -> Statement<'desc, Params> {
+    pub const fn trigger(mut self, action: Action) -> Statement<'desc, Params> {
         self.action = action;
         self
     }
@@ -109,7 +111,7 @@ macro_rules! replace_tt_with_dt {
 macro_rules! impl_trigger_for_wasi_abi {
     ($($P:ident),*) => {
         impl WasiAbiDescriptor<'_,{$crate::__count_idents!($($P),*)}> {
-            pub fn trigger(&self, action: Action) -> Statement<'_, ( $(replace_tt_with_dt!($P),)* )> {
+            pub const fn trigger(&self, action: Action) -> Statement<'_, ( $(replace_tt_with_dt!($P),)* )> {
                 Statement {
                     abi: self,
                     bound: None,
@@ -140,36 +142,61 @@ mod act_statement {
             $(.and_when($other_bound))+
         }};
     }
-    // Macro_expanded macro_rules are not permitted to be used with absolute path,
-    // So here are just the elementary implementations.
+
+    // Macro-expanded `macro_rules` are not permitted to be used with absolute path,
+    // so the followings are just the elementary implementations.
+
+    /// Constructs a [`super::Statement`] with the given ABI descripter([`WasiAbiDescriptor`][desc]) and [`Action::Allow`][action].
+    /// Uses `where`-clauses to specify the bounds of the statement.
+    ///
+    /// [desc]: crate::wasi::WasiAbiDescriptor
+    /// [action]: crate::policy::action::Action::Allow
     #[macro_export]
     macro_rules! _inner_allow {
         ($abi:path $(where)?) => {{
             $crate::statement!($abi => $crate::policy::action::Action::Allow)
         }};
-        ($abi:path where $bound:expr) => {{
-            $crate::statement!($abi where $bound => $crate::policy::action::Action::Allow)
+        ($abi:path where $($bound:expr),+ $(,)*) => {{
+            $crate::statement!($abi where $($bound),* => $crate::policy::action::Action::Allow)
         }};
     }
+
+    /// Constructs a [`super::Statement`] with the given ABI descripter([`WasiAbiDescriptor`][desc]) and [`Action::Kill`][action].
+    /// Uses `where`-clauses to specify the bounds of the statement.
+    ///
+    /// [desc]: crate::wasi::WasiAbiDescriptor
+    /// [action]: crate::policy::action::Action::Kill
     #[macro_export]
     macro_rules! _inner_kill {
         ($abi:path $(where)?) => {{
             $crate::statement!($abi => $crate::policy::action::Action::Kill)
         }};
-        ($abi:path where $bound:expr) => {{
-            $crate::statement!($abi where $bound => $crate::policy::action::Action::Kill)
+        ($abi:path where $($bound:expr),+ $(,)*) => {{
+            $crate::statement!($abi where $($bound),* => $crate::policy::action::Action::Kill)
         }};
     }
+
+    /// Constructs a [`super::Statement`] with the given ABI descripter([`WasiAbiDescriptor`][desc]) and [`Action::Log`][action].
+    /// Uses `where`-clauses to specify the bounds of the statement.
+    ///
+    /// [desc]: crate::wasi::WasiAbiDescriptor
+    /// [action]: crate::policy::action::Action::Log
     #[macro_export]
     macro_rules! _inner_log {
         ($abi:path $(where)?) => {{
             $crate::statement!($abi => $crate::policy::action::Action::Log)
         }};
-        ($abi:path where $bound:expr) => {{
-            $crate::statement!($abi where $bound => $crate::policy::action::Action::Log)
+        ($abi:path where $($bound:expr),+ $(,)*) => {{
+            $crate::statement!($abi where $($bound),* => $crate::policy::action::Action::Log)
         }};
     }
 
+    /// Constructs a [`super::Statement`] with the given ABI descripter([`WasiAbiDescriptor`][desc]) and [`Action::ReturnErrno`][action].
+    /// Uses `where`-clauses to specify the bounds of the statement.
+    /// Uses `=>` to specify the errno to return.
+    ///
+    /// [desc]: crate::wasi::WasiAbiDescriptor
+    /// [action]: crate::policy::action::Action::ReturnErrno
     #[macro_export]
     macro_rules! _inner_return_errno {
         ($abi:path $(where)? => $errno:expr) => {{
@@ -177,10 +204,10 @@ mod act_statement {
             const ACT: $crate::policy::action::Action = $crate::policy::action::Action::ReturnErrno(ERRNO);
             $crate::statement!($abi => ACT)
         }};
-        ($abi:path where $bound:expr => $errno:expr) => {{
+        ($abi:path where $($bound:expr),+ $(,)* => $errno:expr) => {{
             const ERRNO: $crate::policy::action::WasiErrno = $errno;
             const ACT: $crate::policy::action::Action = $crate::policy::action::Action::ReturnErrno(ERRNO);
-            $crate::statement!($abi where $bound => ACT)
+            $crate::statement!($abi where $($bound),* => ACT)
         }};
     }
 }
@@ -196,12 +223,13 @@ mod test {
 
     #[test]
     fn claim_statement() {
-        let statement = WASI.trigger(Action::Allow);
-        assert_eq!(statement.abi.name, "clock_time_get");
+        const STATEMENT: crate::policy::stmt::Statement<'_, (i32, i32)> =
+            WASI.trigger(Action::Allow);
+        assert_eq!(STATEMENT.abi.name, "clock_time_get");
 
         let bound = |a: i32, b: u64| -> bool { a > 0 && b <= 1 << 8 };
         let bound: AbiArgBound<(i32, u64)> = bound.into();
-        let statement = statement.when(bound);
+        let statement = STATEMENT.when(bound);
         assert_eq!(statement.abi.args.len(), 2);
         assert_eq!(statement.abi.name, "clock_time_get");
         assert!(statement.check_bound((1, 233)));
@@ -260,13 +288,28 @@ mod test {
     #[test]
     fn inner_statement_macros() {
         use crate::{_inner_allow, _inner_kill, _inner_log, _inner_return_errno};
-        let allow_stat = _inner_allow!(WASI);
+        // With a comma at the end
+        let allow_stat = _inner_allow!(
+            WASI where |x: i32, y: i64| x as i64 + y > 0, |x: i32, y: i64| x as i64 + y < 256,);
         assert_eq!(allow_stat.action, Action::Allow);
-        let kill_stat = _inner_kill!(WASI);
+
+        // Without a comma at the end
+        let kill_stat = _inner_kill!(
+            WASI where |x: i32, y: i64| x as i64 + y > 0, |x: i32, y: i64| x as i64 + y < 256);
         assert_eq!(kill_stat.action, Action::Kill);
-        let log_stat = _inner_log!(WASI where |x: i32, y: i64| x as i64 + y > 0);
+
+        let log_stat = _inner_log!(
+            WASI where |x: i32, y: i64| x as i64 + y > 0);
         assert_eq!(log_stat.action, Action::Log);
-        let ret_stat = _inner_return_errno!(WASI => 23);
-        assert_eq!(ret_stat.action, Action::ReturnErrno(23));
+
+        let ret_stat_0 = _inner_return_errno!(WASI => 23);
+        assert_eq!(ret_stat_0.action, Action::ReturnErrno(23));
+        // With redundant commas
+        let _ret_stat_1 = _inner_return_errno!(
+            WASI where
+                |x: i32, y: i64| x as i64 + y > 0,
+                |x: i32, y: i64| x as i64 + y < 256,,
+            => 23
+        );
     }
 }
