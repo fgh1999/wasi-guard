@@ -4,10 +4,7 @@ use super::{
     action::Action,
     bound::{AbiArgBound, PredicateParams},
 };
-use crate::{
-    util::Tuple,
-    wasi::{AbiArg, WasiAbiDescriptor},
-};
+use crate::{util::Tuple, wasi::WasiAbiDescriptor};
 
 /// If `abi` [satisfies `bound`], then `action`.
 pub struct Statement<'desc, Params: Tuple + PredicateParams>
@@ -15,7 +12,7 @@ where
     [(); Params::LENGTH]:,
 {
     abi: &'desc WasiAbiDescriptor<'desc, { Params::LENGTH }>,
-    bound: Option<AbiArgBound<Params>>,
+    bound: Option<AbiArgBound<'desc, Params>>,
     pub action: Action,
 }
 
@@ -26,7 +23,7 @@ where
     // TODO: into const fn
     pub fn when<NewParams>(
         self,
-        bound: impl Into<AbiArgBound<NewParams>> + 'desc,
+        bound: impl Into<AbiArgBound<'desc, NewParams>> + 'desc,
     ) -> Statement<'desc, NewParams>
     where
         NewParams: Tuple + PredicateParams,
@@ -50,12 +47,11 @@ where
     // TODO: into const fn
     pub fn and_when(
         self,
-        other_bound: impl Into<AbiArgBound<Params>>,
-        // BUG: AbiArgBound<Params>: 'static
+        other_bound: impl Into<AbiArgBound<'desc, Params>>,
+        // FIXME: AbiArgBound<Params>: 'static
     ) -> Self
     where
         Params: Clone,
-        AbiArgBound<Params>: 'static,
     {
         let Self { abi, bound, action } = self;
         let other_bound: AbiArgBound<Params> = other_bound.into();
@@ -70,7 +66,7 @@ where
         }
     }
 
-    pub const fn trigger(mut self, action: Action) -> Statement<'desc, Params> {
+    pub const fn trigger(mut self, action: Action) -> Self {
         self.action = action;
         self
     }
@@ -86,21 +82,12 @@ macro_rules! impl_check_bound_for_statement {
             /// Returns `true` if there is no bound.
             #[allow(unused)]
             pub fn check_bound(&self, params: ( $($P,)* )) -> bool {
-                use $crate::policy::bound::CheckArgBound;
                 self.bound.as_ref().map_or(true, |bound| bound.check(params))
             }
         }
     };
 }
 all_tuples!(impl_check_bound_for_statement[0,10]: P);
-
-// pub trait Stmt<'s> {
-//     fn arg_num(&self) -> usize;
-//     fn arg_at(&self, index: usize) -> Option<&'s AbiArg>;
-//     // fn bound(&self) -> &'s AbiArgBound<Self::ARG_NUM>;
-//     // fn check_bound<Params>(&self, params: Params) -> bool where Params: core::fmt::Debug;
-//     fn action(&self) -> &Action;
-// }
 
 macro_rules! replace_tt_with_dt {
     ($($tt:tt)*) => {

@@ -27,24 +27,25 @@ macro_rules! impl_predicate_param {
 }
 impl_predicate_param!(bool, i32, u32, i64, u64, f32, f64);
 
-pub trait PredicateFunction<Params: PredicateParams> {
+pub trait PredicateFunction<'pred, Params: PredicateParams>: Sync + Send + 'pred {
     fn call(&self, params: Params) -> bool;
     // TODO: automatic param type conversion
 }
+
 macro_rules! impl_predicate_function_for_ptr {
     ($($Ptr_path:tt)+) => {
-        impl<T, Params> PredicateFunction<Params> for $($Ptr_path)*<T>
+        impl<'pred, T, Params> PredicateFunction<'pred, Params> for $($Ptr_path)*<T>
         where
-            T: PredicateFunction<Params>,
-            Params: PredicateParams,
+            T: PredicateFunction<'pred, Params>,
+            Params: PredicateParams + 'pred,
         {
             fn call(&self, params: Params) -> bool {
                 self.as_ref().call(params)
             }
         }
-        impl<Params> PredicateFunction<Params> for $($Ptr_path)*<dyn PredicateFunction<Params>>
+        impl<'pred, Params> PredicateFunction<'pred, Params> for $($Ptr_path)*<dyn PredicateFunction<'pred, Params>>
         where
-            Params: PredicateParams,
+            Params: PredicateParams + 'pred,
         {
             fn call(&self, params: Params) -> bool {
                 self.as_ref().call(params)
@@ -53,10 +54,10 @@ macro_rules! impl_predicate_function_for_ptr {
     };
 }
 impl_predicate_function_for_ptr!(std::sync::Arc);
-impl_predicate_function_for_ptr!(std::rc::Rc);
-impl<'a, T, Params> PredicateFunction<Params> for &'a [T]
+
+impl<'pred, T, Params> PredicateFunction<'pred, Params> for &'pred [T]
 where
-    T: PredicateFunction<Params>,
+    T: PredicateFunction<'pred, Params>,
     Params: Clone + PredicateParams,
 {
     fn call(&self, params: Params) -> bool {
@@ -65,8 +66,8 @@ where
 }
 macro_rules! impl_predicate {
     ($($P:ident),*) => {
-        impl<F, $($P,)*> $crate::policy::bound::PredicateFunction<( $($P,)* )> for F
-            where F: ::core::ops::Fn($($P,)*) -> bool,
+        impl<'pred, F, $($P,)*> $crate::policy::bound::PredicateFunction<'pred, ( $($P,)* )> for F
+            where F: Sync + Send +::core::ops::Fn($($P,)*) -> bool + 'pred,
                 ( $($P,)* ) : $crate::policy::bound::PredicateParams,
         {
             #[allow(non_snake_case, clippy::too_many_arguments)]
@@ -77,22 +78,35 @@ macro_rules! impl_predicate {
     };
 }
 all_tuples!(impl_predicate[0, 10]: P);
-// TODO: impl compositions of [`PredicateFunction<Params>`]: `.and(..)` and `.or(..)`.
 
-pub enum PredicateComposition<Params, A, B>
+pub enum PredicateComposition<'pred, Params, A, B>
 where
     Params: PredicateParams + Clone,
-    A: PredicateFunction<Params>,
-    B: PredicateFunction<Params>,
+    A: PredicateFunction<'pred, Params>,
+    B: PredicateFunction<'pred, Params>,
 {
-    And(A, B, PhantomData<fn(Params)>),
-    Or(A, B, PhantomData<fn(Params)>),
+    And(A, B, PhantomData<(&'pred A, &'pred B, *const Params)>),
+    Or(A, B, PhantomData<(&'pred A, &'pred B, *const Params)>),
 }
-impl<Params, A, B> PredicateComposition<Params, A, B>
+unsafe impl<'pred, Params, A, B> Send for PredicateComposition<'pred, Params, A, B>
 where
     Params: PredicateParams + Clone,
-    A: PredicateFunction<Params>,
-    B: PredicateFunction<Params>,
+    A: PredicateFunction<'pred, Params>,
+    B: PredicateFunction<'pred, Params>,
+{
+}
+unsafe impl<'pred, Params, A, B> Sync for PredicateComposition<'pred, Params, A, B>
+where
+    Params: PredicateParams + Clone,
+    A: PredicateFunction<'pred, Params>,
+    B: PredicateFunction<'pred, Params>,
+{
+}
+impl<'pred, Params, A, B> PredicateComposition<'pred, Params, A, B>
+where
+    Params: PredicateParams + Clone,
+    A: PredicateFunction<'pred, Params>,
+    B: PredicateFunction<'pred, Params>,
 {
     pub fn all(a: A, b: B) -> Self {
         Self::And(a, b, PhantomData)
@@ -101,27 +115,27 @@ where
         Self::Or(a, b, PhantomData)
     }
 
-    pub fn and<Other>(self, other: Other) -> PredicateComposition<Params, Self, Other>
+    pub fn and<Other>(self, other: Other) -> PredicateComposition<'pred, Params, Self, Other>
     where
-        Other: PredicateFunction<Params>,
-        Params: Clone,
+        Other: PredicateFunction<'pred, Params>,
     {
-        <Self as CompositePredicate<Params, Other>>::and(self, other)
+        PredicateComposition::all(self, other)
     }
-    pub fn or<Other>(self, other: Other) -> PredicateComposition<Params, Self, Other>
+    pub fn or<Other>(self, other: Other) -> PredicateComposition<'pred, Params, Self, Other>
     where
-        Other: PredicateFunction<Params>,
-        Params: Clone,
+        Other: PredicateFunction<'pred, Params>,
     {
-        <Self as CompositePredicate<Params, Other>>::or(self, other)
+        PredicateComposition::any(self, other)
     }
 }
 
-impl<Params, A, B> PredicateFunction<Params> for PredicateComposition<Params, A, B>
+impl<'pred, Params, A, B> PredicateFunction<'pred, Params>
+    for PredicateComposition<'pred, Params, A, B>
 where
     Params: PredicateParams + Clone,
-    A: PredicateFunction<Params>,
-    B: PredicateFunction<Params>,
+    A: PredicateFunction<'pred, Params>,
+    B: PredicateFunction<'pred, Params>,
+    Self: 'pred,
 {
     fn call(&self, params: Params) -> bool {
         match self {
@@ -131,66 +145,27 @@ where
     }
 }
 
-trait CompositePredicate<Params: PredicateParams + Clone, Other>
-where
-    Self: Sized + PredicateFunction<Params>,
-    Other: PredicateFunction<Params>,
-{
-    fn and(self, other: Other) -> PredicateComposition<Params, Self, Other>;
-    fn or(self, other: Other) -> PredicateComposition<Params, Self, Other>;
-}
-impl<Params, A, B> CompositePredicate<Params, B> for A
-where
-    Params: PredicateParams + Clone,
-    A: PredicateFunction<Params>,
-    B: PredicateFunction<Params>,
-{
-    fn and(self, other: B) -> PredicateComposition<Params, Self, B> {
-        PredicateComposition::all(self, other)
-    }
-    fn or(self, other: B) -> PredicateComposition<Params, Self, B> {
-        PredicateComposition::any(self, other)
-    }
-}
-// macro_rules! impl_composite_predicate {
-//     ($($P:ident),*) => {
-//         impl<F, $($P,)* Other> CompositePredicate<( $($P,)* ), Other> for F
-//             where F: ::std::ops::Fn($($P,)*) -> bool,
-//                 ( $($P,)* ) : $crate::policy::bound::PredicateParams,
-//                 ( $($P,)* ) : ::core::clone::Clone,
-//                 Other: $crate::policy::bound::PredicateFunction<( $($P,)* )>,
-//         {
-//             fn and(self, other: Other) -> PredicateComposition<( $($P,)* ), Self, Other> {
-//                 PredicateComposition::all(self, other)
-//             }
-//             fn or(self, other: Other) -> PredicateComposition<( $($P,)* ), Self, Other> {
-//                 PredicateComposition::any(self, other)
-//             }
-//         }
-//     };
-// }
-// all_tuples!(impl_composite_predicate[0, 10]: P);
-
 #[derive(Clone)]
-pub struct AbiArgBound<Params: PredicateParams> {
-    predicate: Arc<dyn PredicateFunction<Params>>,
+pub struct AbiArgBound<'bound, Params: PredicateParams> {
+    predicate: Arc<dyn PredicateFunction<'bound, Params>>,
 }
-impl<Params: PredicateParams> AbiArgBound<Params> {
-    fn from_predicate(predicate: impl PredicateFunction<Params> + 'static) -> Self {
+// Safety: PredicateFunction<Params: PredicateParams>: Sync + Send
+unsafe impl<'bound, Params: PredicateParams> Sync for AbiArgBound<'bound, Params> {}
+unsafe impl<'bound, Params: PredicateParams> Send for AbiArgBound<'bound, Params> {}
+
+impl<'bound, Params: PredicateParams> AbiArgBound<'bound, Params> {
+    fn from_predicate(predicate: impl PredicateFunction<'bound, Params>) -> Self {
         Self {
             predicate: Arc::new(predicate),
         }
     }
-    fn from_boxed_predicate(predicate: Box<dyn PredicateFunction<Params>>) -> Self {
+    fn from_boxed_predicate(predicate: Box<dyn PredicateFunction<'bound, Params>>) -> Self {
         Self {
             predicate: predicate.into(),
         }
     }
 }
-impl<Params: PredicateParams + Clone> AbiArgBound<Params>
-where
-    Self: 'static,
-{
+impl<'bound, Params: PredicateParams + Clone + 'bound> AbiArgBound<'bound, Params> {
     pub fn and(self, other: Self) -> Self {
         let Self {
             predicate: this, ..
@@ -213,19 +188,19 @@ where
 
 macro_rules! impl_from_fn_for_bound {
     ($($P:ident),*) => {
-        impl<Predicate, $($P,)*> From<Predicate> for AbiArgBound<( $($P,)* )>
+        impl<'bound, Predicate, $($P,)*> From<Predicate> for AbiArgBound<'bound, ( $($P,)* )>
         where ( $($P,)* ) : $crate::policy::bound::PredicateParams,
-            Predicate : Fn($($P,)*) -> bool + 'static,
+            Predicate : 'static + Fn($($P,)*) -> bool + Sync + Send,
         {
             fn from(predicate: Predicate) -> Self {
                 Self::from_predicate(predicate)
             }
         }
 
-        impl<$($P,)*> From<Box<dyn PredicateFunction<($($P,)*)>>> for AbiArgBound<( $($P,)* )>
+        impl<'bound, $($P,)*> From<Box<dyn PredicateFunction<'bound, ($($P,)*)>>> for AbiArgBound<'bound, ( $($P,)* )>
         where ( $($P,)* ) : $crate::policy::bound::PredicateParams,
         {
-            fn from(predicate: Box<dyn PredicateFunction<($($P,)*)>>) -> Self {
+            fn from(predicate: Box<dyn PredicateFunction<'bound, ($($P,)*)>>) -> Self {
                 Self::from_boxed_predicate(predicate)
             }
         }
@@ -233,20 +208,15 @@ macro_rules! impl_from_fn_for_bound {
 }
 all_tuples!(impl_from_fn_for_bound[0,10]: P);
 
-pub trait CheckArgBound {
-    type Params;
-    fn check(&self, params: Self::Params) -> bool;
-}
-
 macro_rules! impl_check_for_bound {
     ($($P:ident),*) => {
-        impl<$($P,)*> crate::policy::bound::CheckArgBound for AbiArgBound<( $($P,)* )>
-        where ( $($P,)* ) : $crate::policy::bound::PredicateParams,
+        impl<'bound, $($P,)*> AbiArgBound<'bound, ( $($P,)* )>
+        where ( $($P,)* ) : $crate::policy::bound::PredicateParams + 'bound,
         {
-            type Params = ( $($P,)* );
             #[allow(non_snake_case, clippy::too_many_arguments)]
-            fn check(&self, params: Self::Params) -> bool {
-                PredicateFunction::<Self::Params>::call(self.predicate.as_ref(), params)
+            pub fn check(&self, params: ( $($P,)* )) -> bool {
+                // PredicateFunction::<'bound, ( $($P,)* )>::call(&self.predicate, params)
+                self.predicate.call(params)
             }
         }
     };
@@ -277,7 +247,6 @@ mod test {
 
     #[test]
     fn bound_on_closure() {
-        use crate::policy::bound::CheckArgBound;
         let bound_0_0: AbiArgBound<()> = (|| true).into();
         assert!(bound_0_0.check(()));
 
@@ -289,7 +258,7 @@ mod test {
 
     #[test]
     fn fn_to_bound() {
-        use crate::policy::bound::{CheckArgBound, PredicateFunction};
+        use crate::policy::bound::PredicateFunction;
         fn predicate_0(a: i32) -> bool {
             a > 0
         }
@@ -306,14 +275,25 @@ mod test {
         assert!(bound_1_1.check((1,)));
         assert!(!bound_1_1.check((-1,)));
 
-        struct Predicate1;
-        impl PredicateFunction<(i32,)> for Predicate1 {
+        #[allow(dead_code)]
+        struct Predicate1(i32);
+        impl Predicate1 {
+            #[allow(dead_code)]
+            fn change(&mut self, n: i32) {
+                self.0 = n;
+            }
+        }
+        impl PredicateFunction<'static, (i32,)> for Predicate1 {
             fn call(&self, (a,): (i32,)) -> bool {
                 a > 0
             }
         }
-        let boxed_predicate: Box<dyn PredicateFunction<(i32,)>> = Box::new(Predicate1);
-        let bound_1_2: AbiArgBound<(i32,)> = boxed_predicate.into();
+        // unsafe impl Sync for Predicate1 {}
+        let boxed_predicate = Box::new(Predicate1(1));
+        // TODO: why can't I use `into` here?
+        // let bound_1_2: AbiArgBound<(i32,)> = boxed_predicate.into();
+        let bound_1_2: AbiArgBound<(i32,)> = AbiArgBound::from_boxed_predicate(boxed_predicate);
+
         assert!(bound_1_2.check((1,)));
         assert!(!bound_1_2.check((-1,)));
 
@@ -327,7 +307,6 @@ mod test {
 
     #[test]
     fn bound_list() {
-        use crate::policy::bound::CheckArgBound;
         let bound_list = [|a: i32| a > 0, |a: i32| a < 233, |a: i32| a % 2 == 0];
         let bound_list: Vec<AbiArgBound<(i32,)>> =
             bound_list.into_iter().map(|bound| bound.into()).collect();
@@ -369,7 +348,7 @@ mod test {
 
     #[test]
     fn bound_compositions() {
-        use crate::policy::bound::{AbiArgBound, CheckArgBound};
+        use crate::policy::bound::AbiArgBound;
 
         let bound = [|a: i32| a < 0, |a: i32| a > 233, |a: i32| a % 2 == 0]
             .into_iter()
