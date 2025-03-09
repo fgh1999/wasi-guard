@@ -10,6 +10,7 @@ use std::{collections::HashMap, rc::Rc};
 
 use abi::ImportFunc;
 use anyhow::{bail, Context, Result};
+pub use wasi;
 use wasmparser::{Import, Parser, Payload, RecGroup, TypeRef};
 
 pub fn parse_import_funcs(wasm_binary: &[u8]) -> Result<Vec<ImportFunc>> {
