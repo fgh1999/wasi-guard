@@ -5,6 +5,8 @@ use syn::{
     parse_macro_input, Ident, LitInt, Result,
 };
 
+mod statement;
+
 struct AllTuples {
     macro_ident: Ident,
     start: usize,
@@ -113,6 +115,28 @@ pub fn repeat_tuple(input: TokenStream) -> TokenStream {
         quote! { () }
     } else {
         quote! { (#(#elements,)*) }
+    }
+    .into()
+}
+
+/// Generate [`WasiGuard`][wasi_gurad::policy::WasiGuard] for WASI ABIs.
+///
+/// ```no_run,ignore
+/// policy! {
+///    default kill;
+///    allow some_path::to::wasi::abi1 where bound1, bound2, ...;
+///    ret_errno(12+1) another_path::to::wasi::abi2 where bound3;
+/// };
+/// ```
+#[proc_macro]
+pub fn policy(input: TokenStream) -> TokenStream {
+    if input.is_empty() {
+        return TokenStream::new();
+    }
+
+    let _policy = parse_macro_input!(input as statement::Policy);
+    quote! {
+        #_policy
     }
     .into()
 }

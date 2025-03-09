@@ -1,12 +1,14 @@
+use wasi_descriptor::WasiAbiDescriptor;
 use wasi_guard_macros::all_tuples;
 
 use super::{
     action::Action,
     bound::{AbiArgBound, PredicateParams},
 };
-use crate::{util::Tuple, wasi::WasiAbiDescriptor};
+use crate::util::Tuple;
 
 /// If `abi` [satisfies `bound`], then `action`.
+#[derive(Clone)]
 pub struct Statement<'desc, Params: Tuple + PredicateParams>
 where
     [(); Params::LENGTH]:,
@@ -45,11 +47,7 @@ where
     }
 
     // TODO: into const fn
-    pub fn and_when(
-        self,
-        other_bound: impl Into<AbiArgBound<'desc, Params>>,
-        // FIXME: AbiArgBound<Params>: 'static
-    ) -> Self
+    pub fn and_when(self, other_bound: impl Into<AbiArgBound<'desc, Params>>) -> Self
     where
         Params: Clone,
     {
@@ -79,6 +77,7 @@ macro_rules! impl_check_bound_for_statement {
             ( $($P,)* ) : $crate::policy::bound::PredicateParams,
             ( $($P,)* ) : $crate::util::Tuple,
         {
+            /// Checks if the bound is satisfied by the given parameters.
             /// Returns `true` if there is no bound.
             #[allow(unused)]
             pub fn check_bound(&self, params: ( $($P,)* )) -> bool {
@@ -91,14 +90,20 @@ all_tuples!(impl_check_bound_for_statement[0,10]: P);
 
 macro_rules! replace_tt_with_dt {
     ($($tt:tt)*) => {
-        $crate::wasi::DefaultAbiArgType
+        wasi_descriptor::DefaultAbiArgType
     };
+}
+
+pub trait Trigger<'initiator> {
+    type DefaultOutput;
+    fn trigger(&'initiator self, action: Action) -> Self::DefaultOutput;
 }
 // Use i32 as the default type of predicate parameters
 macro_rules! impl_trigger_for_wasi_abi {
     ($($P:ident),*) => {
-        impl WasiAbiDescriptor<'_,{$crate::__count_idents!($($P),*)}> {
-            pub const fn trigger(&self, action: Action) -> Statement<'_, ( $(replace_tt_with_dt!($P),)* )> {
+        impl<'desc> Trigger<'desc> for WasiAbiDescriptor<'desc, {$crate::__count_idents!($($P),*)}> {
+            type DefaultOutput = Statement<'desc, ( $(replace_tt_with_dt!($P),)* )>;
+            fn trigger(&'desc self, action: Action) -> Self::DefaultOutput {
                 Statement {
                     abi: self,
                     bound: None,
@@ -111,19 +116,26 @@ macro_rules! impl_trigger_for_wasi_abi {
 all_tuples!(impl_trigger_for_wasi_abi[0,10]: P);
 
 mod act_statement {
+    /// Use [`Action::Kill`][default] as the default action.
+    ///
+    /// [default]: crate::policy::action::Action::default
     #[macro_export]
     macro_rules! statement {
         ($abi:path) => {{
+            use $crate::policy::stmt::Trigger;
             ($abi).trigger($crate::policy::action::Action::default())
         }};
         ($abi:path $(where)? => $($act_type:tt)+) => {{
+            use $crate::policy::stmt::Trigger;
             ($abi).trigger($($act_type)+)
         }};
         ($abi:path where $bound:expr => $($act_type:tt)+) => {{
+            use $crate::policy::stmt::Trigger;
             ($abi).trigger($($act_type)+)
             .when($bound)
         }};
         ($abi:path where $bound:expr, $($other_bound:expr),+ => $($act_type:tt)+) => {{
+            use $crate::policy::stmt::Trigger;
             ($abi).trigger($($act_type)+)
             .when($bound)
             $(.and_when($other_bound))+
@@ -201,22 +213,23 @@ mod act_statement {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        desc_wasi_abi,
-        policy::{bound::AbiArgBound, stmt::Action},
-        wasi::WasiAbiDescriptor,
+    use wasi_descriptor::{desc_wasi_abi, WasiAbiDescriptor};
+
+    use crate::policy::{
+        bound::AbiArgBound,
+        stmt::{Action, Trigger},
     };
+
     const WASI: WasiAbiDescriptor<2> = desc_wasi_abi!(clock_time_get(clock_id, precision[8]));
 
     #[test]
     fn claim_statement() {
-        const STATEMENT: crate::policy::stmt::Statement<'_, (i32, i32)> =
-            WASI.trigger(Action::Allow);
-        assert_eq!(STATEMENT.abi.name, "clock_time_get");
+        let statement = WASI.trigger(Action::Allow);
+        assert_eq!(statement.abi.name, "clock_time_get");
 
         let bound = |a: i32, b: u64| -> bool { a > 0 && b <= 1 << 8 };
         let bound: AbiArgBound<(i32, u64)> = bound.into();
-        let statement = STATEMENT.when(bound);
+        let statement = statement.when(bound);
         assert_eq!(statement.abi.args.len(), 2);
         assert_eq!(statement.abi.name, "clock_time_get");
         assert!(statement.check_bound((1, 233)));

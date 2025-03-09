@@ -1,7 +1,5 @@
-use wasi_guard::{
-    desc_wasi_abi,
-    policy::{action::Action, bound::AbiArgBound},
-};
+use wasi_descriptor::desc_wasi_abi;
+use wasi_guard::policy::{action::Action, bound::AbiArgBound, Trigger};
 
 #[test]
 fn full_statement() {
@@ -13,35 +11,3 @@ fn full_statement() {
     assert!(statement.check_bound((1, 233)));
     assert!(!statement.check_bound((0, 1 << 9)));
 }
-// claim a statement:
-// action { $(abi $(where bound)?),+ }
-
-// macro_rules! statement {
-//     {$action:ident { $($abi:ident $(where $bound:expr)?),+ } } => {
-
-//     };
-// }
-
-// policy! {
-//     some_action! {
-//         $(abi $(where $(bound)*)?),*
-//     }
-// }
-
-// macro_rules! policy {
-//     [$($type:ty),*] => {
-//         struct Policy_($($type),*);
-//     };
-//     {$($type:ty),*} => {
-//         ($($type,)*)
-//     };
-// }
-
-// policy! [i32, u64];
-
-// #[test]
-// fn test_macro() {
-//     let _a: Policy_ = Policy_(1, 2);
-//     // println!{"{:?}", _a};
-//     type Policy = policy!{i32, i32};
-// }

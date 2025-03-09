@@ -6,8 +6,6 @@
 pub mod abi;
 pub mod policy;
 pub mod util;
-pub mod wasi;
-
 use std::{collections::HashMap, rc::Rc};
 
 use abi::ImportFunc;
@@ -123,11 +121,12 @@ mod test {
 
     #[test]
     fn define_wasi_abi() {
+        use wasi_descriptor::{desc_wasi_abi, DefaultAbiArgType};
         let wasi_args = desc_wasi_abi!(wasi_args(a, bb: i64, cc_c[8]));
         assert_eq!(wasi_args.name, "wasi_args");
         assert_eq!(wasi_args.args.len(), 3);
         assert_eq!(wasi_args.args[0].name, "a");
-        assert_eq!(wasi_args.args[0].size, size_of::<wasi::DefaultAbiArgType>());
+        assert_eq!(wasi_args.args[0].size, size_of::<DefaultAbiArgType>());
         assert_eq!(wasi_args.args[1].name, "bb");
         assert_eq!(wasi_args.args[1].size, size_of::<i64>());
         assert_eq!(wasi_args.args[2].name, "cc_c");

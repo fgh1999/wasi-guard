@@ -25,7 +25,8 @@ macro_rules! impl_predicate_param {
         impl_predicate_param!($($tail),*);
     };
 }
-impl_predicate_param!(bool, i32, u32, i64, u64, f32, f64);
+impl_predicate_param!(bool, i8, u8, i16, u16, i32, u32, i64, u64, f32, f64);
+impl_predicate_param!([u8; 1 << 0], [u8; 1 << 1], [u8; 1 << 2], [u8; 1 << 3]);
 
 pub trait PredicateFunction<'pred, Params: PredicateParams>: Sync + Send + 'pred {
     fn call(&self, params: Params) -> bool;

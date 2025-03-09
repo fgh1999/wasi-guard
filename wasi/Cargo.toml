@@ -1,0 +1,15 @@
+[package]
+name = "wasi"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+wasi_descriptor = { workspace = true }
+cfg-if = "1.0"
+paste = "1.0"
+
+[features]
+default = ["p1", "wasmedge-sock"]
+p1 = []
+p2 = []
+wasmedge-sock = ["p1"]
