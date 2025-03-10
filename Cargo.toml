@@ -16,6 +16,7 @@ lazy_static = { version = "1.5.0", features = ["spin_no_std"] }
 [dev-dependencies]
 wat = "1.225.0"
 rand = "0.9.0"
+wasip1 = { package = "wasi", version = "0.11", default-features = false }
 
 [workspace]
 members = ["macros", "wasi", "wasi_descriptor"]

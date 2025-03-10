@@ -63,7 +63,7 @@ declare_wasi_abis!(
     path_filestat_get(arg0, arg1, arg2, arg3, arg4);
     path_filestat_set_times(arg0, arg1, arg2, arg3, arg4: i64, arg5: i64, arg6);
     path_link(arg0, arg1, arg2, arg3, arg4, arg5, arg6);
-    path_open( arg0, arg1, arg2, arg3, arg4, arg5: i64, arg6: i64, arg7, arg8);
+    path_open(arg0, arg1, arg2, arg3, arg4, arg5: i64, arg6: i64, arg7, arg8);
     path_readlink(arg0, arg1, arg2, arg3, arg4, arg5);
     path_remove_directory(arg0, arg1, arg2);
     path_rename(arg0, arg1, arg2, arg3, arg4, arg5);

@@ -50,3 +50,6 @@ jobs:
 
       - name: WASI tests
         run: cd wasi && cargo test
+
+      - name: Examples
+        run: cargo build --examples
