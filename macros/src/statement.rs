@@ -255,7 +255,7 @@ impl ToTokens for Policy {
                 quote! { (#(#param_types,)*) }
             };
             quote! {
-                lazy_static::lazy_static! {
+                wasi_guard::policy::lazy_static! {
                     pub static ref #guard_name: Option<wasi_guard::policy::WasiGuard<'static, #param_type>> =
                         Some(wasi_guard::policy::WasiGuard::from_arr([
                             #(#stmts),*

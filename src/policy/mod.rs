@@ -4,6 +4,7 @@ pub mod stmt;
 
 pub use action::Action;
 use bound::PredicateParams;
+pub use lazy_static::lazy_static;
 use smallvec::SmallVec;
 use stmt::Statement;
 pub use stmt::Trigger;

@@ -13,6 +13,10 @@ policy! {
 #[test]
 fn got_killed() {
     assert_eq!(MUST_BE_KILLED_WASIS.len(), 1);
-    assert!(MUST_BE_KILLED_WASIS.iter().any(|wasi_name| wasi_name == &"sched_yield"));
-    assert!(!MUST_BE_KILLED_WASIS.iter().any(|wasi_name| wasi_name == &"proc_eixt"));
+    assert!(MUST_BE_KILLED_WASIS
+        .iter()
+        .any(|wasi_name| wasi_name == &"sched_yield"));
+    assert!(!MUST_BE_KILLED_WASIS
+        .iter()
+        .any(|wasi_name| wasi_name == &"proc_eixt"));
 }
