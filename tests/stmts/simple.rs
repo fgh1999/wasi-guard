@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
-use wasi::*;
 use wasi_guard::policy::{action::Action::Kill, policy};
+use wasi_guard::wasi::*;
 
 policy! {
     default = Kill;
