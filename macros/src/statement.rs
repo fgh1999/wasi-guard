@@ -237,9 +237,10 @@ impl Parse for Policy {
 
 // Only used when the type can not be inferred from the arguments in bounds
 fn get_path_of_default_param_type(wasi_name: &str) -> proc_macro2::TokenStream {
+    let wasi_guard_lib = format_ident!("wasi_guard");
     let wasi_lib = format_ident!("wasi");
     let type_name = format_ident!("{}_params_default_t", wasi_name.to_lowercase());
-    quote! { #wasi_lib::#type_name }
+    quote! { #wasi_guard_lib::#wasi_lib::#type_name }
 }
 
 impl ToTokens for Policy {
