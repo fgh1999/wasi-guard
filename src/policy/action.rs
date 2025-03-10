@@ -1,4 +1,4 @@
-pub type WasiErrno = i32;
+pub type WasiErrno = u16;
 
 /// Actions that can be taken by the policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

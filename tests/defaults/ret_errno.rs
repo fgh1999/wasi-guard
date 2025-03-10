@@ -1,6 +1,9 @@
-use wasi_guard::policy::{action::Action::ReturnErrno, policy};
+use wasi_guard::policy::{
+    action::{Action::ReturnErrno, WasiErrno},
+    policy,
+};
 
-const DEFUALT_ERRNO: i32 = 21;
+const DEFUALT_ERRNO: WasiErrno = 21;
 
 policy! {
     default = ret_err(DEFUALT_ERRNO);
