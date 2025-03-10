@@ -15,6 +15,15 @@ pub enum Action {
     ReturnErrno(syn::Expr),
     Kill,
 }
+impl Action {
+    pub const fn is_kill(&self) -> bool {
+        matches!(self, Action::Kill)
+    }
+    pub const fn is_allow(&self) -> bool {
+        matches!(self, Action::Allow)
+    }
+}
+
 impl Parse for Action {
     fn parse(input: ParseStream) -> Result<Self> {
         let action = input.parse::<Ident>()?;
@@ -37,7 +46,7 @@ impl ToTokens for Action {
             Action::Allow => quote! { wasi_guard::policy::action::Action::Allow },
             Action::Log => quote! { wasi_guard::policy::action::Action::Log },
             Action::ReturnErrno(errno) => {
-                quote! { wasi_guard::policy::action::Action::ReturnErrno(#errno) }
+                quote! { wasi_guard::policy::action::Action::ReturnErrno((#errno) as wasi_guard::policy::action::WasiErrno) }
             }
             Action::Kill => quote! { wasi_guard::policy::action::Action::Kill },
         }
@@ -106,6 +115,10 @@ impl WasiStatement {
             bounds: Vec::new(),
             arg_types: Vec::new(),
         }
+    }
+
+    pub fn must_be_killed(&self) -> bool {
+        self.action.is_kill() && self.bounds.is_empty()
     }
 }
 
@@ -232,7 +245,7 @@ fn get_path_of_default_param_type(wasi_name: &str) -> proc_macro2::TokenStream {
 impl ToTokens for Policy {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let default_action = self.default_action.clone();
-        let statements = self.statements.iter().map(|(wasi, stmts)| {
+        let specified_guards = self.statements.iter().map(|(wasi, stmts)| {
             let guard_name = format_ident!("WASI_GUARD_{}", wasi.to_string().to_uppercase());
             let param_type = if stmts[0].arg_types.is_empty() {
                 let param_type_path = get_path_of_default_param_type(wasi.to_string().as_str());
@@ -251,20 +264,47 @@ impl ToTokens for Policy {
             }
         });
 
-        let rest_wasis = wasi::WASI_NAMES
+        let rest_wasis: Vec<String> = wasi::WASI_NAMES
             .iter()
-            .filter(|wasi_name| !self.has_wasi_named(wasi_name));
-        let default_guards = rest_wasis.into_iter().map(|wasi_name| {
+            .filter_map(|wasi_name| {
+                if !self.has_wasi_named(wasi_name) {
+                    Some(wasi_name.to_string())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let default_guards = rest_wasis.iter().map(|wasi_name| {
             let guard_name = format_ident!("WASI_GUARD_{}", wasi_name.to_uppercase());
             let param_type = get_path_of_default_param_type(wasi_name);
             quote! {
                 pub const #guard_name: Option<wasi_guard::policy::WasiGuard<'static, #param_type>> = None;
             }
         });
+
+        let must_be_killed = {
+            let mut must_be_killed: Vec<_> = self
+                .statements
+                .iter()
+                .filter(|(_, stmts)| stmts.iter().any(|stmt| stmt.must_be_killed()))
+                .map(|(wasi, _)| wasi.to_string())
+                .collect();
+
+            if default_action.is_kill() {
+                must_be_killed.extend(rest_wasis.clone());
+            }
+
+            let vec_len = must_be_killed.len();
+            quote! {
+                pub const MUST_BE_KILLED_WASIS: [&str; #vec_len] = [ #(#must_be_killed),*];
+            }
+        };
+
         quote! {
             pub const DEFUALT_ACTION: wasi_guard::policy::action::Action = #default_action;
-            #(#statements)*
+            #(#specified_guards)*
             #(#default_guards)*
+            #must_be_killed
         }
         .to_tokens(tokens)
     }
