@@ -1,3 +1,5 @@
+use core::cmp::Ordering;
+
 pub type WasiErrno = u16;
 
 /// Actions that can be taken by the policy.
@@ -23,18 +25,18 @@ impl Default for Action {
 }
 
 impl PartialOrd for Action {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match (self, other) {
-            (Self::Allow, Self::Allow) => Some(std::cmp::Ordering::Equal),
-            (Self::Allow, _) => Some(std::cmp::Ordering::Less),
-            (_, Self::Allow) => Some(std::cmp::Ordering::Greater),
-            (Self::Log, Self::Log) => Some(std::cmp::Ordering::Equal),
-            (Self::Log, _) => Some(std::cmp::Ordering::Less),
-            (_, Self::Log) => Some(std::cmp::Ordering::Greater),
+            (Self::Allow, Self::Allow) => Some(Ordering::Equal),
+            (Self::Allow, _) => Some(Ordering::Less),
+            (_, Self::Allow) => Some(Ordering::Greater),
+            (Self::Log, Self::Log) => Some(Ordering::Equal),
+            (Self::Log, _) => Some(Ordering::Less),
+            (_, Self::Log) => Some(Ordering::Greater),
             (Self::ReturnErrno(_), Self::ReturnErrno(_)) => None,
-            (Self::ReturnErrno(_), _) => Some(std::cmp::Ordering::Less),
-            (_, Self::ReturnErrno(_)) => Some(std::cmp::Ordering::Greater),
-            (Self::Kill, Self::Kill) => Some(std::cmp::Ordering::Equal),
+            (Self::ReturnErrno(_), _) => Some(Ordering::Less),
+            (_, Self::ReturnErrno(_)) => Some(Ordering::Greater),
+            (Self::Kill, Self::Kill) => Some(Ordering::Equal),
         }
     }
 }

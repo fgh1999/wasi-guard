@@ -1,5 +1,5 @@
-use core::fmt::Debug;
-use std::{marker::PhantomData, sync::Arc};
+use alloc::{boxed::Box, sync::Arc};
+use core::{fmt::Debug, marker::PhantomData};
 
 use wasi_guard_macros::all_tuples;
 
@@ -54,7 +54,7 @@ macro_rules! impl_predicate_function_for_ptr {
         }
     };
 }
-impl_predicate_function_for_ptr!(std::sync::Arc);
+impl_predicate_function_for_ptr!(Arc);
 
 impl<'pred, T, Params> PredicateFunction<'pred, Params> for &'pred [T]
 where
@@ -226,6 +226,8 @@ all_tuples!(impl_check_for_bound[0,10]: P);
 
 #[cfg(test)]
 mod test {
+    use alloc::{boxed::Box, vec::Vec};
+
     use super::AbiArgBound;
 
     #[test]

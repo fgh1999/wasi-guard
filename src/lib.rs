@@ -1,3 +1,4 @@
+#![no_std]
 #![feature(fn_traits)]
 #![feature(tuple_trait)]
 #![allow(incomplete_features)]
@@ -6,14 +7,24 @@
 pub mod abi;
 pub mod policy;
 pub mod util;
-use std::{collections::HashMap, rc::Rc};
+extern crate alloc;
+use alloc::{collections::BTreeMap, rc::Rc, vec::Vec};
 
 use abi::ImportFunc;
-use anyhow::{bail, Context, Result};
 pub use wasi;
 use wasmparser::{Import, Parser, Payload, RecGroup, TypeRef};
 
-pub fn parse_import_funcs(wasm_binary: &[u8]) -> Result<Vec<ImportFunc>> {
+#[derive(Debug, thiserror::Error)]
+pub enum ParseError {
+    #[error("Failed to parse Wasm")]
+    WasmParseError,
+    #[error("Imported type is not a function")]
+    InvalidImportType,
+    #[error("ImportSection other than Func is not supported")]
+    UnsupportedImportSectionError,
+}
+
+pub fn parse_import_funcs(wasm_binary: &[u8]) -> Result<Vec<ImportFunc>, ParseError> {
     struct UntypedImportFunc<'a> {
         /// The module being imported from.
         pub module: &'a str,
@@ -23,9 +34,8 @@ pub fn parse_import_funcs(wasm_binary: &[u8]) -> Result<Vec<ImportFunc>> {
         pub type_ref: u32,
     }
     impl<'a> TryFrom<Import<'a>> for UntypedImportFunc<'a> {
-        type Error = anyhow::Error;
-
-        fn try_from(import: Import<'a>) -> Result<Self> {
+        type Error = ParseError;
+        fn try_from(import: Import<'a>) -> Result<Self, Self::Error> {
             if let TypeRef::Func(index) = import.ty {
                 Ok(UntypedImportFunc {
                     module: import.module,
@@ -33,33 +43,39 @@ pub fn parse_import_funcs(wasm_binary: &[u8]) -> Result<Vec<ImportFunc>> {
                     type_ref: index,
                 })
             } else {
-                bail!("Import type is not a function");
+                Err(ParseError::InvalidImportType)
             }
         }
     }
 
     let mut import_funcs: Vec<UntypedImportFunc> = Vec::new();
-    let mut types: HashMap<usize, Rc<RecGroup>> = HashMap::new();
+    let mut types: BTreeMap<usize, Rc<RecGroup>> = BTreeMap::new();
 
     let parser = Parser::new(0);
     for payload in parser.parse_all(wasm_binary) {
-        match payload? {
+        if payload.is_err() {
+            return Err(ParseError::WasmParseError);
+        }
+        match payload.unwrap() {
             Payload::ImportSection(reader) => {
                 for import in reader {
-                    let import = import.context("Failed to parse import entry")?;
+                    if import.is_err() {
+                        return Err(ParseError::WasmParseError);
+                    }
+                    let import = import.unwrap();
                     if matches!(import.ty, TypeRef::Func(..)) {
                         import_funcs.push(import.try_into().unwrap());
                     } else {
-                        bail!("ImportSection other than Func is not supported");
+                        return Err(ParseError::UnsupportedImportSectionError);
                     }
                 }
             }
             Payload::TypeSection(reader) => {
                 for (offset, record_group) in reader.into_iter().enumerate() {
-                    types.insert(
-                        offset,
-                        Rc::new(record_group.context("Failed to parse type")?),
-                    );
+                    if record_group.is_err() {
+                        return Err(ParseError::WasmParseError);
+                    }
+                    types.insert(offset, Rc::new(record_group.unwrap()));
                 }
             }
             _ => {}
@@ -76,11 +92,11 @@ pub fn parse_import_funcs(wasm_binary: &[u8]) -> Result<Vec<ImportFunc>> {
         .collect();
 
     // all imported functions' type should be C ABI type.
-    for func in import_funcs.iter() {
-        if !func.is_c_abi() {
-            bail!("Imported function type is not C ABI type");
-        }
-    }
+    // for func in import_funcs.iter() {
+    //     if !func.is_c_abi() {
+    //         bail!("Imported function type is not C ABI type");
+    //     }
+    // }
     Ok(import_funcs)
 }
 

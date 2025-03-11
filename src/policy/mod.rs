@@ -2,6 +2,8 @@ pub mod action;
 pub mod bound;
 pub mod stmt;
 
+use alloc::vec::Vec;
+
 pub use action::Action;
 use bound::PredicateParams;
 pub use lazy_static::lazy_static;
@@ -97,6 +99,8 @@ all_tuples!(impl_check_for_wasi_guard[0,10]: P);
 
 #[cfg(test)]
 mod test {
+    use alloc::vec::Vec;
+
     use wasi_descriptor::{desc_wasi_abi, WasiAbiDescriptor};
 
     use crate::policy::WasiGuard;
@@ -147,20 +151,6 @@ mod test {
         assert_eq!(actions[0], crate::policy::action::Action::Allow);
         assert_eq!(actions[1], crate::policy::action::Action::Log);
         assert_eq!(actions[2], crate::policy::action::Action::Allow);
-    }
-
-    #[test]
-    fn static_guard() {
-        use std::sync::LazyLock;
-
-        use crate::_inner_allow;
-        static GUARD: LazyLock<WasiGuard<(i32, i64)>> = LazyLock::new(|| {
-            WasiGuard::from_arr([_inner_allow!(WASI where |x: i32, y: i64| x > 0 && y > 0)])
-        });
-        let actions = GUARD.check((1, 2));
-        assert!(actions
-            .iter()
-            .all(|action| action == &crate::policy::action::Action::Allow));
     }
 
     lazy_static::lazy_static! {

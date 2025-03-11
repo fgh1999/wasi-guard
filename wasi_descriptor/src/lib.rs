@@ -1,3 +1,5 @@
+#![no_std]
+
 pub type ArgSize = usize;
 pub type DefaultAbiArgType = i32;
 

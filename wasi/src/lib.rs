@@ -1,3 +1,5 @@
+#![no_std]
+
 pub mod p1;
 #[cfg(feature = "p1")]
 pub use p1::*;

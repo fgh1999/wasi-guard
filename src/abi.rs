@@ -1,4 +1,4 @@
-use std::{collections::HashSet, rc::Rc};
+use alloc::{collections::BTreeSet, rc::Rc, vec::Vec};
 
 use wasmparser::{CompositeInnerType, FuncType, RecGroup, SubType};
 
@@ -41,7 +41,7 @@ pub fn forbidden_imports<'a, 'i>(
     imports: &'i [ImportFunc<'a>],
     blacklist: &'i [&str],
 ) -> Vec<&'i ImportFunc<'a>> {
-    let blacklist: HashSet<&str> = blacklist.iter().cloned().collect();
+    let blacklist: BTreeSet<&str> = blacklist.iter().cloned().collect();
     imports
         .iter()
         .filter(|import| blacklist.contains(import.name))

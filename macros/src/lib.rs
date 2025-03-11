@@ -5,6 +5,8 @@ use syn::{
     parse_macro_input, Ident, LitInt, Result,
 };
 
+extern crate alloc;
+
 mod statement;
 
 struct AllTuples {
@@ -109,7 +111,7 @@ impl Parse for RepeatTupleInput {
 #[proc_macro]
 pub fn repeat_tuple(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as RepeatTupleInput);
-    let elements: Vec<_> = std::iter::repeat(input.r#type).take(input.count).collect();
+    let elements: Vec<_> = core::iter::repeat(input.r#type).take(input.count).collect();
 
     if elements.is_empty() {
         quote! { () }

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use alloc::collections::BTreeMap;
 
 use quote::{format_ident, quote, ToTokens};
 use syn::{
@@ -192,7 +192,7 @@ impl ToTokens for WasiStatement {
 pub struct Policy {
     pub default_action: Action,
     /// { wasi_ident -> statements }
-    pub statements: HashMap<syn::Ident, Vec<WasiStatement>>,
+    pub statements: BTreeMap<syn::Ident, Vec<WasiStatement>>,
 
     wasi_names: Vec<String>,
 }
@@ -218,10 +218,10 @@ impl Parse for Policy {
                 statements.push(input.parse()?);
             }
         }
-        let statements: HashMap<syn::Ident, Vec<WasiStatement>> =
+        let statements: BTreeMap<syn::Ident, Vec<WasiStatement>> =
             statements
                 .into_iter()
-                .fold(HashMap::new(), |mut map, stmt| {
+                .fold(BTreeMap::new(), |mut map, stmt| {
                     map.entry(stmt.wasi.clone()).or_default().push(stmt);
                     map
                 });
