@@ -25,16 +25,12 @@ pub const STMT_EACH_GUARD: usize = 2;
 /// Each statement consists of a predicate and an action to be taken
 /// when the predicate is satisfied.
 pub struct WasiGuard<'desc, Params: Tuple + PredicateParams + Clone>
-where
-    [(); Params::LENGTH]:,
 {
     statements: SmallVec<[Statement<'desc, Params>; STMT_EACH_GUARD]>,
 }
 
 impl<'desc, Params: Tuple + PredicateParams + Clone> From<Vec<Statement<'desc, Params>>>
     for WasiGuard<'desc, Params>
-where
-    [(); Params::LENGTH]:,
 {
     fn from(statements: Vec<Statement<'desc, Params>>) -> Self {
         Self {
@@ -43,8 +39,6 @@ where
     }
 }
 impl<'desc, Params: Tuple + PredicateParams + Clone> WasiGuard<'desc, Params>
-where
-    [(); Params::LENGTH]:,
 {
     pub fn from_arr<const N: usize>(statements: [Statement<'desc, Params>; N]) -> Self {
         Self {
@@ -57,8 +51,6 @@ macro_rules! impl_from_arr_to_wasi_guard {
         $(
             impl<'desc, Params: Tuple + PredicateParams + Clone> From<[Statement<'desc, Params>; $N]>
                 for WasiGuard<'desc, Params>
-            where
-                [(); Params::LENGTH]:,
             {
                 fn from(statements: [Statement<'desc, Params>; $N]) -> Self {
                     Self::from_arr(statements)
@@ -75,9 +67,9 @@ pub const ACTION_NUM: usize = STMT_EACH_GUARD;
 macro_rules! impl_check_for_wasi_guard {
     ($($P:ident),*) => {
         impl<'desc, $($P,)*> WasiGuard<'desc, ( $($P,)* )>
-        where [(); <( $($P,)* )>::LENGTH]:,
+        where
             ( $($P,)* ) : $crate::policy::bound::PredicateParams,
-            ( $($P,)* ) : $crate::util::Tuple,
+            ( $($P,)* ) : $crate::util::Tuple + 'desc,
             ( $($P,)* ) : ::core::clone::Clone,
         {
             /// Checks if the bounds is satisfied by the given parameters,

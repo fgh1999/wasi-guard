@@ -10,17 +10,13 @@ use crate::util::Tuple;
 /// If `abi` [satisfies `bound`], then `action`.
 #[derive(Clone)]
 pub struct Statement<'desc, Params: Tuple + PredicateParams>
-where
-    [(); Params::LENGTH]:,
 {
-    abi: &'desc WasiAbiDescriptor<'desc, { Params::LENGTH }>,
     bound: Option<AbiArgBound<'desc, Params>>,
     pub action: Action,
 }
 
 impl<'desc, Params: Tuple + PredicateParams> Statement<'desc, Params>
 where
-    [(); Params::LENGTH]:,
 {
     // TODO: into const fn
     pub fn when<NewParams>(
@@ -29,18 +25,9 @@ where
     ) -> Statement<'desc, NewParams>
     where
         NewParams: Tuple + PredicateParams,
-        [(); NewParams::LENGTH - Params::LENGTH]:,
-        [(); Params::LENGTH - NewParams::LENGTH]:,
     {
-        let Self { abi, action, .. } = self;
+        let Self { action, .. } = self;
         Statement {
-            // SAFETY: NewParams::LENGTH == Params::LENGTH is guaranteed by the where clause
-            abi: unsafe {
-                core::mem::transmute::<
-                    &WasiAbiDescriptor<'_, { Params::LENGTH }>,
-                    &WasiAbiDescriptor<'desc, { NewParams::LENGTH }>,
-                >(abi)
-            },
             bound: Some(bound.into()),
             action,
         }
@@ -49,16 +36,15 @@ where
     // TODO: into const fn
     pub fn and_when(self, other_bound: impl Into<AbiArgBound<'desc, Params>>) -> Self
     where
-        Params: Clone,
+        Params: Clone + 'desc,
     {
-        let Self { abi, bound, action } = self;
+        let Self { bound, action } = self;
         let other_bound: AbiArgBound<Params> = other_bound.into();
         let bound = match bound {
             None => other_bound,
             Some(b) => b.and(other_bound),
         };
         Statement {
-            abi,
             bound: Some(bound),
             action,
         }
@@ -73,9 +59,9 @@ where
 macro_rules! impl_check_bound_for_statement {
     ($($P:ident),*) => {
         impl<'desc, $($P,)*> Statement<'desc, ( $($P,)* )>
-        where [(); <( $($P,)* )>::LENGTH]:,
+        where
             ( $($P,)* ) : $crate::policy::bound::PredicateParams,
-            ( $($P,)* ) : $crate::util::Tuple,
+            ( $($P,)* ) : $crate::util::Tuple + 'desc,
         {
             /// Checks if the bound is satisfied by the given parameters.
             /// Returns `true` if there is no bound.
@@ -105,7 +91,6 @@ macro_rules! impl_trigger_for_wasi_abi {
             type DefaultOutput = Statement<'desc, ( $(replace_tt_with_dt!($P),)* )>;
             fn trigger(&'desc self, action: Action) -> Self::DefaultOutput {
                 Statement {
-                    abi: self,
                     bound: None,
                     action,
                 }
@@ -225,13 +210,10 @@ mod test {
     #[test]
     fn claim_statement() {
         let statement = WASI.trigger(Action::Allow);
-        assert_eq!(statement.abi.name, "clock_time_get");
 
         let bound = |a: i32, b: u64| -> bool { a > 0 && b <= 1 << 8 };
         let bound: AbiArgBound<(i32, u64)> = bound.into();
         let statement = statement.when(bound);
-        assert_eq!(statement.abi.args.len(), 2);
-        assert_eq!(statement.abi.name, "clock_time_get");
         assert!(statement.check_bound((1, 233)));
         assert!(!statement.check_bound((0, 1 << 9)));
 
@@ -239,7 +221,6 @@ mod test {
         let bound = |a: i32, new_b: u32| -> bool { a > 0 && new_b <= 1 << 8 };
         let bound: AbiArgBound<(i32, u32)> = bound.into();
         let statement = statement.when(bound);
-        assert_eq!(statement.abi.name, "clock_time_get");
         assert!(statement.check_bound((1, 233)));
         assert!(!statement.check_bound((0, 1 << 9)));
 
@@ -248,8 +229,6 @@ mod test {
             .trigger(Action::Allow)
             .when(|a: i32, _: bool| a > 0)
             .trigger(Action::Kill);
-        assert_eq!(statement.abi.name, "clock_time_get");
-        assert_eq!(statement.abi.args.len(), 2);
         assert!(statement.check_bound((1, true)));
         assert!(!statement.check_bound((0 - 1, false)));
     }
@@ -271,8 +250,6 @@ mod test {
 
         let other_bound = |_: i32, b: bool| b;
         let statement = statement!(WASI where |a: i32, _: bool| a > 0, other_bound => Action::Kill);
-        assert_eq!(statement.abi.name, "clock_time_get");
-        assert_eq!(statement.abi.args.len(), 2);
         assert!(statement.check_bound((1, true)));
         assert!(!statement.check_bound((1, false)));
         assert!(!statement.check_bound((0 - 1, true)));

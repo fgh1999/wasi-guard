@@ -1,8 +1,6 @@
 #![no_std]
 #![feature(fn_traits)]
 #![feature(tuple_trait)]
-#![allow(incomplete_features)]
-#![feature(generic_const_exprs)]
 
 pub mod abi;
 pub mod policy;
