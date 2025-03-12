@@ -247,17 +247,20 @@ impl ToTokens for Policy {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let default_action = self.default_action.clone();
         let specified_guards = self.statements.iter().map(|(wasi, stmts)| {
-            let guard_name = format_ident!("WASI_GUARD_{}", wasi.to_string().to_uppercase());
+            let wasi_name = wasi.to_string();
+            let guard_name = format_ident!("WASI_GUARD_{}", wasi_name.to_uppercase());
             let param_type = if stmts[0].arg_types.is_empty() {
-                let param_type_path = get_path_of_default_param_type(wasi.to_string().as_str());
+                let param_type_path = get_path_of_default_param_type(wasi_name.as_str());
                 quote! { #param_type_path }
             } else {
                 let param_types: Vec<&Box<syn::Type>> = stmts[0].arg_types.iter().map(|pat| &pat.ty).collect();
                 quote! { (#(#param_types,)*) }
             };
+            let param_type_name = format_ident!("{}_guard_params_t", wasi_name.to_lowercase());
             quote! {
+                pub type #param_type_name = #param_type;
                 wasi_guard::policy::lazy_static! {
-                    pub static ref #guard_name: Option<wasi_guard::policy::WasiGuard<'static, #param_type>> =
+                    pub static ref #guard_name: Option<wasi_guard::policy::WasiGuard<'static, #param_type_name>> =
                         Some(wasi_guard::policy::WasiGuard::from_arr([
                             #(#stmts),*
                         ]));
@@ -278,8 +281,11 @@ impl ToTokens for Policy {
         let default_guards = rest_wasis.iter().map(|wasi_name| {
             let guard_name = format_ident!("WASI_GUARD_{}", wasi_name.to_uppercase());
             let param_type = get_path_of_default_param_type(wasi_name);
+            let param_type_name = format_ident!("{}_guard_params_t", wasi_name.to_lowercase());
+
             quote! {
-                pub const #guard_name: Option<wasi_guard::policy::WasiGuard<'static, #param_type>> = None;
+                pub type #param_type_name = #param_type;
+                pub const #guard_name: Option<wasi_guard::policy::WasiGuard<'static, #param_type_name>> = None;
             }
         });
 
