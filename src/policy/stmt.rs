@@ -9,15 +9,12 @@ use crate::util::Tuple;
 
 /// If `abi` [satisfies `bound`], then `action`.
 #[derive(Clone)]
-pub struct Statement<'desc, Params: Tuple + PredicateParams>
-{
+pub struct Statement<'desc, Params: Tuple + PredicateParams> {
     bound: Option<AbiArgBound<'desc, Params>>,
     pub action: Action,
 }
 
-impl<'desc, Params: Tuple + PredicateParams> Statement<'desc, Params>
-where
-{
+impl<'desc, Params: Tuple + PredicateParams> Statement<'desc, Params> {
     // TODO: into const fn
     pub fn when<NewParams>(
         self,

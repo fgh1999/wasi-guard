@@ -10,6 +10,7 @@ use alloc::{collections::BTreeMap, rc::Rc, vec::Vec};
 
 use abi::ImportFunc;
 pub use wasi;
+pub use wasi_descriptor;
 use wasmparser::{Import, Parser, Payload, RecGroup, TypeRef};
 
 #[derive(Debug, thiserror::Error)]

@@ -24,8 +24,7 @@ pub const STMT_EACH_GUARD: usize = 2;
 /// containing multiple statements that share the same parameter types.
 /// Each statement consists of a predicate and an action to be taken
 /// when the predicate is satisfied.
-pub struct WasiGuard<'desc, Params: Tuple + PredicateParams + Clone>
-{
+pub struct WasiGuard<'desc, Params: Tuple + PredicateParams + Clone> {
     statements: SmallVec<[Statement<'desc, Params>; STMT_EACH_GUARD]>,
 }
 
@@ -38,8 +37,7 @@ impl<'desc, Params: Tuple + PredicateParams + Clone> From<Vec<Statement<'desc, P
         }
     }
 }
-impl<'desc, Params: Tuple + PredicateParams + Clone> WasiGuard<'desc, Params>
-{
+impl<'desc, Params: Tuple + PredicateParams + Clone> WasiGuard<'desc, Params> {
     pub fn from_arr<const N: usize>(statements: [Statement<'desc, Params>; N]) -> Self {
         Self {
             statements: statements.to_vec().into(),
