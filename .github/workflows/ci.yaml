@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - static_params_type
   pull_request:
     branches:
       - main
@@ -40,16 +41,24 @@ jobs:
             ${{ runner.os }}-cargo-build-
 
       - name: Run tests
-        run: cargo test
+        run: |
+          cargo test
+          cargo test --features wasmedge-sock
 
       - name: Macro tests
-        run: cd macros && cargo test
+        run: |
+          cd macros
+          cargo test
+          cargo test --features wasmedge-sock
 
       - name: WASI descriptor tests
         run: cd wasi_descriptor && cargo test
 
       - name: WASI tests
-        run: cd wasi && cargo test
+        run: |
+          cd wasi
+          cargo test
+          cargo test --features wasmedge-sock
 
       - name: Examples
         run: cargo build --examples

@@ -316,3 +316,14 @@ impl ToTokens for Policy {
         .to_tokens(tokens)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn wasmedge_sock_abis() {
+        #[cfg(feature = "wasmedge-sock")]
+        assert!(wasi::WASI_NAMES.iter().any(|name| name == &"sock_listen"));
+        #[cfg(not(feature = "wasmedge-sock"))]
+        assert!(!wasi::WASI_NAMES.iter().any(|name| name == &"sock_listen"));
+    }
+}

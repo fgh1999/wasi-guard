@@ -23,6 +23,18 @@ anyhow = "1.0"
 members = ["macros", "wasi", "wasi_descriptor"]
 resolver = "2"
 
+[features]
+wasmedge-sock = ["wasi/wasmedge-sock", "wasi-guard-macros/wasmedge-sock"]
+parse = []
+
 [workspace.dependencies]
 wasi_descriptor = { path = "wasi_descriptor" }
 wasi = { path = "wasi" }
+
+[[example]]
+name = "usage"
+required-features = ["wasmedge-sock"]
+
+[[example]]
+name = "scanner"
+required-features = ["parse"]
